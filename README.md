@@ -13,7 +13,7 @@ This file shows the data munging to get the data into a clean and consistent for
 
 The below two files show some of my thought processes and reasoning for using MongoDB on the backend. This was to avoid having R do some of the processing in memory.
 
-NYCTaxi.rmd
+NYCTaxi.rmd.
 Part of my process for this project was to utilize previous knowledge. In this case by using MongoDB to store the taxi data.
 This also proved useful with the data coming in csv format and maximum sizes around 2GB. It was not possible to open these files using standard spreadsheet software. The above file shows some of my pre-processing of the data including querying the csv file directly using sqldf, connecting to a MongoDB from R via libraries such as rmongodb, mongolite and nodbi.
 
