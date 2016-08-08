@@ -7,6 +7,12 @@ The files uploaded are as follows:-
 P4_Final_Writeup_v3.rmd
 R Markdown file containing the analysis of the taxi data. This version of the project is version 3. It has been checked for typos, but it might still contain some errors. A final edit has not been done. In the final version of this code many of the grpahs will be eliminated as some do not give sufficient additional insight. They are part of the exploratory process, but not part of the final analysis.
 
+Appendix.rmd
+This file shows the data munging to get the data into a clean and consistent format for analysis.
+
+
+The below two files show some of my thought processes and reasoning for using MongoDB on the backend. This was to avoid having R do some of the processing in memory.
+
 NYCTaxi.rmd
 Part of my process for this project was to utilize previous knowledge. In this case by using MongoDB to store the taxi data.
 This also proved useful with the data coming in csv format and maximum sizes around 2GB. It was not possible to open these files using standard spreadsheet software. The above file shows some of my pre-processing of the data including querying the csv file directly using sqldf, connecting to a MongoDB from R via libraries such as rmongodb, mongolite and nodbi.
