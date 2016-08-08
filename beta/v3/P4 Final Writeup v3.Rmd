@@ -1,0 +1,1700 @@
+---
+output:
+  pdf_document: default
+  html_document:
+    css: test2.css
+    dpi: 144
+    fig_caption: yes
+    fig_height: 10
+    fig_width: 23
+    widescreen: yes
+  word_document: default
+---
+<link href="test2.css" rel="stylesheet">
+
+Exploratory Data Analysis in R by Laura Hoyte
+========================================================
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using
+# in your analysis in this code chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk.
+# This prevents the code from displaying in the knitted HTML output.
+# You should set echo=FALSE for all code chunks in your file.
+  
+library(knitr)
+library(sqldf)
+library(ggplot2)
+library(mongolite)
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+library(tidyr)
+library(jsonlite)
+library(lubridate)
+library(gridExtra)
+library(GGally)
+library(scales)
+library(memisc)
+library(sp)
+library(rgeos)
+library(rgdal)
+library(maptools)
+library(RColorBrewer)
+library(maps)
+library(grid)
+#library(mapsdata)
+library(ROSE)
+library(DMwR)
+library(cluster)
+library(StatMatch)
+library(pvclust)
+library(bigmemory)
+library(fastcluster)
+
+#load("P4Final_Writeup.Rdata")
+
+```
+
+```{r Load_the_Data, echo=FALSE}
+# Load the Data
+#taxidata <- read.csv("taxidata.csv", header = TRUE, stringsAsFactors = T)
+taxidata <- read.csv("taxidata5_loctimedestwkday.csv", header = TRUE, stringsAsFactors = T)
+# Convert pckdatetime and drpdatetime to Date
+taxidata$pckdatetime <- as.POSIXct(taxidata$pckdatetime)
+taxidata$drpdatetime <- as.POSIXct(taxidata$drpdatetime)
+
+# Remove 3 borough fields
+taxidata$borough <- NULL
+taxidata$boroughCode <- NULL
+taxidata$X.id <- NULL
+#save.image("P4Final_Writeup.Rdata")
+levels(taxidata$ratecodeid)[2] <- "JFK"
+
+```
+
+# Univariate Plots Section
+
+### Histogram of total amount paid for yellow and green taxis
+
+```{r Histogram of total amount, echo=FALSE}
+
+summary(taxidata$total_amount)
+p1 <- ggplot(aes(x = total_amount), data = taxidata) +
+  geom_histogram(binwidth = 1, fill = I("blue")) +
+  scale_x_continuous(limits = c(-100, 160), breaks = seq(-100, 160, 20)) +
+  ggtitle("Distribution of Taxi Total Amount")
+
+summary(subset(taxidata$total_amount, taxidata$type == "yellow"))
+p2 <- ggplot(aes(x = total_amount), data = taxidata) +
+  geom_histogram(binwidth = 1, fill = I("#DED20E")) +
+  scale_x_continuous(limits = c(-100, 160), breaks = seq(-100, 160, 20)) +
+  ggtitle("Distribution of Taxi Total Amount")
+
+summary(subset(taxidata$total_amount, taxidata$type == "green"))
+p3 <- ggplot(aes(x = total_amount), data = taxidata) +
+  geom_histogram(binwidth = 1, fill = I("#5BC70C")) +
+  scale_x_continuous(limits = c(-100, 160), breaks = seq(-100, 160, 20)) +
+  ggtitle("Distribution of Green Taxi Total Amount")
+
+grid.arrange(p1, p2, p3, ncol = 1)
+
+```
+
+These are all exponential distributions. All plots have interesting peaks at just under $60 and again around $70. Both taxi types also have negative fares. How can you have negative fares? Maybe if it is a refund.
+The median total amount for yellow taxis is higher than that for green taxis at $12.30 vs. $11.80.
+Given the exponential distributions, if the log is taken it should give us a normal distribution.
+
+### Take log of the distributions.
+
+```{r Log of total_amount, echo =FALSE}
+
+p1 <- ggplot(aes(x = total_amount), data = subset(taxidata, taxidata$total_amount > 0)) +
+  geom_histogram(bins = 50, fill = "blue") +
+  scale_x_log10() +
+  ggtitle("Log of distribution of Taxi Total Amount")
+
+p2 <- ggplot(aes(x = total_amount), data = subset(taxidata, taxidata$total_amount > 0 & taxidata$type == "yellow")) +
+  geom_histogram(bins = 50, fill = I("#DED20E")) +
+  scale_x_log10() +
+  ggtitle("Log of distribution of Yellow Taxi Total Amount")
+
+p3 <- ggplot(aes(x = total_amount), data = subset(taxidata, taxidata$total_amount > 0 & taxidata$type == "green")) +
+  geom_histogram(bins = 50, fill = I("#5BC70C")) +
+  scale_x_log10() +
+  ggtitle("Log of distribution of Green Taxi Total Amount")
+
+grid.arrange(p1, p2, p3, ncol = 1)
+
+
+```
+
+The log distributions for all taxis, yellow and green follow a normal distribution.
+
+### Basic Fare - fare_amount
+
+The total_amount paid however is based on many factors - fare_amount, extra, mta_tax, improvement surchage, tip_amount aand tolls_amount.
+It therefore makes sense to look at the basic fare before other charges and tips, as this is determined by time and distance.
+
+```{r Basic fare, echo+FALSE}
+
+summary(taxidata$fare_amount)
+p1 <- ggplot(aes(x = fare_amount), data = taxidata) +
+  geom_histogram(binwidth = 1, fill = "blue") +
+  coord_cartesian(xlim = c(-20, 125)) +
+  ggtitle(label = "Distribution of fare amount for all taxis")
+
+summary(subset(taxidata, type == "yellow")$fare_amount)
+p2 <- ggplot(aes(x = fare_amount), data = subset(taxidata, type == "yellow")) +
+  geom_histogram(binwidth = 1, fill = I("#DED20E")) +
+  coord_cartesian(xlim = c(-20, 125)) +
+  ggtitle(label = "Distribution of fare amount for yellow taxis")
+
+summary(subset(taxidata, type == "green")$fare_amount)
+p3 <- ggplot(aes(x = fare_amount), data = subset(taxidata, type == "green")) +
+  geom_histogram(bins = 500, fill = I("#5BC70C")) +
+  coord_cartesian(xlim = c(-20, 125)) +
+  ggtitle(label = "Distribution of fare amount for green taxis")
+
+grid.arrange(p1, p2, p3, ncol = 1)
+
+```
+
+Very interesting. The median for both yellow and green taxis, as well as the overall median is $10. This also shows that tips plus other charges are $1.80 for green taxis and $2.30 for yellow on average. Looking at the fare amount, the spike occurs around $50 for the yellow taxis, but no such spike exists for the green taxis. Does this mean that tips plus other charges are roughly $8-$10 for these $50 trips? We also have outliers up to $280 for yellow taxis and $356 for green.
+
+Most of the fares are less than $60 with the bulk occuring in the $30 or less region. This could signify that New Yorkers prefer using taxis for shorter trips.
+
+The fare_amount still maintains the exponential distribution. Hence the removal of additional charges and and tips had no effect on the shape - $50 spike aside.
+
+## Effect of additional charges and tips on total_amount
+
+```{r Effect of addtional charges and tips on total amount, echo=FALSE}
+
+summary(taxidata$total_amount-taxidata$fare_amount)
+ggplot(aes(x = (total_amount -fare_amount)), data = taxidata) +
+  geom_histogram(bins = 2000, fill = "blue") +
+  coord_cartesian(xlim = c(0, 20)) +
+  ggtitle(label = "Distribution of other charges and tips") +
+  xlab("Tolls, taxes, surcharges and tips")
+
+```
+
+75% of the additional charges are very small, only going up to $3.65. There is a spike around $6 corresponding to the the difference seen in the total and fare amounts. However in general, there are fewer high price additional charges beyond $5. This also indicates that new yorkers might take shorter trips, hence tip less and pay smaller or no tolls. There are however outliers as the maximum additional charges is $386.
+
+If new yorkers take shorter trips, what does the distribution of distance and time look like?
+
+### Distribution of trip distance
+
+```{r Histograms of trip distance, echo=FALSE}
+
+summary(taxidata$trip_distance)
+p1 <- ggplot(aes(x = trip_distance), data = taxidata) +
+  geom_histogram(binwidth = 0.1, fill = "blue") +
+  coord_cartesian(xlim = c(0, 40)) +
+  ggtitle(label = "Distribution of distance traveled by all taxis (miles)")
+
+summary(subset(taxidata, type == "yellow")$trip_distance)
+p2 <- ggplot(aes(x = trip_distance), data = subset(taxidata, type == "yellow")) +
+  geom_histogram(binwidth = 0.1, fill = I("#DED20E")) +
+  coord_cartesian(xlim = c(0, 40)) +
+  ggtitle(label = "Distribution of distance traveled by yellow taxis (miles)")
+
+summary(subset(taxidata, type == "green")$trip_distance)
+p3 <- ggplot(aes(x = trip_distance), data = subset(taxidata, type == "green")) +
+  geom_histogram(binwidth = 0.1, fill = I("#5BC70C")) +
+  coord_cartesian(xlim = c(0, 40)) +
+  ggtitle(label = "Distribution of distance traveled by green taxis (miles)")
+
+grid.arrange(p1, p2, p3, ncol =1)
+
+```
+
+Trip activity starts to decrease above 5 miles until there is very little activity around 10 miles. and above. This coincides with what is seen in the fare amount histograms confirming that new yorkers prefer short trips.
+Interestingly there is a spike at a distance of 0 miles, with about 450 trips for green taxis and just under 1,500 trips for yellow taxis. This could indicate that these taxis were stuck in traffic or mayybe errors.
+
+### Take a closer look at potential distance outliers
+
+```{r Trip distance outliers, echo=FALSE}
+
+head(sort(taxidata$trip_distance, decreasing = TRUE), 10)
+
+# Remove the two outliers at 158.40 and 300 miles
+
+taxidata <- subset(taxidata,  !(taxidata$trip_distance == 300 | taxidata$trip_distance == 158.40))
+
+```
+
+Some towns in Westchester county are up to a 50 miles and 60 minutes from New York city, so the remaining distance observations are valid.
+
+### Distribution of trip duration
+
+```{r Histogram of trip duration, echo=FALSE}
+
+summary(taxidata$trip_duration)
+p1 <- ggplot(aes(x = trip_duration), data = taxidata) +
+  geom_histogram(binwidth = 0.1, fill = "blue") +
+  coord_cartesian(xlim = c(0, 90)) +
+  ggtitle(label = "Distribution of trip duration for all taxis (minutes)")
+
+summary(subset(taxidata, type == "yellow")$trip_duration)
+p2 <- ggplot(aes(x = trip_duration), data = subset(taxidata, type == "yellow")) +
+  geom_histogram(binwidth = 0.1, fill = I("#DED20E")) +
+  coord_cartesian(xlim = c(0, 90)) +
+  ggtitle(label = "Distribution of trip duration for yellow taxis (minutes)")
+
+summary(subset(taxidata, type == "green")$trip_duration)
+p3 <- ggplot(aes(x = trip_duration), data = subset(taxidata, type == "green")) +
+  geom_histogram(binwidth = 0.1, fill = I("#5BC70C")) +
+  coord_cartesian(xlim = c(0, 90)) +
+  ggtitle(label = "Distribution of trip duration for green taxis (minutes)")
+
+grid.arrange(p1, p2, p3, ncol =1)
+
+```
+
+These are right skewed distributions with 75% of the trips lasting just over 15 minutes. Beyond 60 minutes there are very few trips.
+There are some yellow taxi trips with durations less than zero minutes. This is not possible, therefore these can be erroneous data if the odometr malfunctioned for example. As a result the bottom 0.1% and the top 99.9% can be removed from the data. This can also help in eliminating some outliers.
+Before doing this however less take a look at the trip speeds.
+
+### Distribution of trip speed (speed at which taxis are travelling)
+
+```{r Histogram of trip speed}
+
+# Descriptive statistics of taxi speed
+with(subset(taxidata, trip_duration > 0), summary(trip_distance/(trip_duration/60)))
+
+# Calculate speed and plot
+taxidata.spd <- subset(taxidata[c("trip_distance", "trip_duration")], trip_duration > 0)
+
+taxidata.spd$trip_speed <- taxidata.spd$trip_distance/(taxidata.spd$trip_duration/60)
+taxidata.spd <- as.data.frame(taxidata.spd)
+
+ggplot(aes(x = trip_speed), data = taxidata.spd) +
+  geom_histogram(binwidth = 0.1, fill = "blue") +
+  coord_cartesian(xlim = c(0, 100)) +
+  ggtitle(label = "Distribution of taxi speeds (mph)")
+
+```
+
+The taxi speeds go up to around 50mph. Beyond that trips at even greater speeds are sporadic, but not impossible. Only 75% of taxis attain speeds of 15mph and under on average.
+However, the summary statistics indicate that some taxis in New York are traveling at impossible speeds. Hence this unreliable data should be removed from the dataset. To make the speeds more realistic remove the top 99.9% quantile.
+
+### Realistics speeds
+
+```{r}
+
+# Get the 99.(% quantile
+quantile(taxidata.spd$trip_speed, 0.999)
+
+```
+
+The 99.9% quantile indicates a speed of around 55mph. This quantile might eliminate too much of the valuable data, as some speeds above this might be perfectly valid and might be form longer (distance) trips. Therefore we first need to check other factors associated with these trips in order to determine what data to eleimnate. This will be done via bivariate analysis.
+
+### A look at the categorical variables
+```{r Payment type, echo=FALSE}
+
+# Payment types
+table(taxidata$payment_type, useNA= "ifany")
+
+ggplot(aes(x = payment_type), data = taxidata) +
+  geom_bar(fill = "blue") +
+  ggtitle(label = "Distribution by payment type")
+
+#Rate codes
+table(taxidata$ratecodeid, useNA= "ifany")
+
+ggplot(aes(x = ratecodeid), data = taxidata) +
+  geom_bar(fill = "blue") +
+  ggtitle(label = "Distribution by rate codes")
+
+
+#  Number of passengers per trip
+table(taxidata$passenger_count, useNA= "ifany")
+
+ggplot(aes(x = passenger_count), data = taxidata) +
+  geom_bar(fill = "blue") +
+  scale_x_continuous(breaks = seq(0, 10, 1)) +
+  ggtitle(label = "Distribution by number of passengers per trip")
+ 
+
+# Time of day - defined by pickup hour
+table(taxidata$pckhour, useNA= "ifany")
+
+ggplot(aes(x = pckhour), data = taxidata) +
+  geom_bar(fill = "blue") +
+  scale_x_continuous(breaks = seq(0, 24, 1)) +
+  ggtitle(label = "Distribution of trips by hour of day") +
+   xlab("Pickup time (hours)")
+
+# Day of the week
+table(taxidata$pckwday, useNA= "ifany")
+
+ggplot(aes(x = pckwday), data = taxidata) +
+  geom_bar(fill = "blue") +
+  ggtitle(label = "Distribution of trips dby ay of the week") +
+   xlab("Day of the week")
+
+```
+
+Credit card and cash payments dominate by making up 60% and 39% of the payment types respectively. Less than 1% of the payments are disputed or considered no charge.
+
+The majority of new yorkers, 97%, took trips at the standard rate. This was followed by trips to JFK with 2% and trips where the fare ws negotiated at less than 1%. 
+
+New yorkers are pretty solitary people at least when it comes to tax travel. A whopping 72% of the trips were for a single passenger only. This was followed by 2, 5, 3 and 6 passengers at 14%, 5%, 4%, and 3% respectively.
+It is interesting to note that there are 72 trips with 0 passengers. Does this mean the taxi was waiting for a passenger with the meter running, but the trip did not take place in the end? It will  be interesting to check the time and distance for these trips.
+
+New yorkers use more taxis during evening rush hour (5-8pm) at 23% of trips, than morning rush hour (7-10am) 17%. In fact evening rush hour sustains right through to a night time rush hour (9pm-12am) and morning rush hour lasts well until 4pm. Traffic only really falls in the early hours of the morning (1-6am) where . It might be best to group the hour of day into bands, but from this data 7am-12am can be considered rush hour traffic in New York city.
+
+I thought the days of the week might prove more popular than weekends, however this is only partially true. The two main nights for entertainments have the most trips with a combined 35% of the weeky trips. In fact if we add in Sunday we get 46% or just under half of the trips occuring over these three days. It will be interesting to see if the peaks occur in the night time weekend and Sunday night traffic.
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+There are 224,177 observations in the data and it forms a 1.5% sample of all taxi data for the month of May, 2015.
+The dataset originally had 20 variables.
+Numerical features include:- vendorid, pickup_datetime, dropoff_datetime, passenger_count, trip_distance, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude. In addition it has the following payment fields (in dollars) - fare_amount (calculated by the meter and dependent on time-and-distance), extra, mta_tax, improvement_surcharge, tip_amount(credit cards only), tolls_amount, and total_amount.
+
+The categorical features are as follows:-
+vendorid, store_and_fwd_flag
+ratecodeid: 1 = Standard rate, 2 = JFK, 3 = Newark, 4 = Nassau or Westchester, 5 = Negotiated fare, 6 = Group ride
+payment_type: 1 = Credit card, 2 = Cash, 3 = No charge, 4 = Dispute, 5 = Unknown, 6 = Voided trip
+trip_type: 1 = Street-hail (green only), 2 = Dispatch (green only), 3 = No Info (created for yellow only)
+
+197,374 observations are for yellow taxis and 26,803 for green.
+Most taxi trips are short with a median price of $12.30 for the total_amount and 75% of trips costing $18.30. This is also reflected in the distance as median trip distance is 1.8 miles and 75% of trips only go up to 3.4 miles. 
+
+
+
+### What is/are the main feature(s) of interest in your dataset?
+The main features of the dataset are fare_amount, as this is a factor of the time and distance taken for the trip, tip amount and any additional charges. 
+
+### What other features in the dataset do you think will help support your investigation into your feature(s) of interest?
+Other interesting features are payment_type and ratecodeid as these can also effect the amount paid for the trip. Pickup location (longitude and latitude) is also an interesting feature to determine the origin of these trips and if it has any effect on th etype of trip the customer will take and therefore the total_amount. The time of day and day of the week is also important in determinig the total_amount paid as Friday, Saturday and Sunday have the modt traffic and the city appears to have a 7am-1am rush hour.
+
+### Did you create any new variables from existing variables in the dataset?
+I created trip_duration in minutes by finding the time interval between the pick_datetime and dropoff date_time.
+I also created some time series information extracted from both pickup and dropofff datetimes using the lubridate package. The resulted in the new fields year, month, day, hour, minute, second, yday (day of the year), and wday (day of the week) for both pickup and dropoff.
+In a addition an id field was created to give each observation its own unique identifier.
+A type field was created to categorize yellow taxis separate from green taxis.
+A field called trip_speed, in miles per hour (mph), while not added to the dataset, was created and aused to determine if some of the underlying distance and duration data was realistic.
+
+### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
+
+The distributions were standard exponential distributions for all of the numerical fields. Taking the logs of some of them resulted in the log normal distribution.
+They are howevr outliers for all of the numerical features. For example the maximum total_amount paid is $406, while the maximum distance is 300 miles and the max tip_amount is $386.
+
+Most of the categorical data is in integer format. I created factors from these numbers and assigned user  friendly labels. E.g. the payment_type and ratecodeid fields.
+I also dropped the unused ehail-fee from the green taxi data and converted all column names to matching lowercase so tha they can be stored in one data frame.
+There are still outliers in the data and data that might be considered an error, but before making the decision to remove or adjust this data I will need to do a bivariate and multivariate analysis.
+
+# Analyze relationships among multiple variables - before doing a bivariate analysis
+
+### Create a Scatter Matrix
+
+```{r Create a Scatter Matrix, echo=FALSE}
+# 
+# # Sample 1,000 diamonds from the data set
+# set.seed(2015051000)
+# 
+# # Restrict the number of columns in th escatter matrix
+# taxicols = c("total_amount", "fare_amount", "trip_distance", "trip_duration", "payment_type", "ratecodeid", "passenger_count", "pckhour", "pckwday", "pickup_latitude", "pickup_longitude")
+# 
+# taxidata.var <- taxidata %>%
+#               dplyr::select(one_of(taxicols))
+#   
+# taxidata_samp <- taxidata.var[sample(1:length(taxidata.var$total_amount), 1000), ]
+# ggpairs(taxidata_samp, lower = list(continuous = wrap("points", shape = I('.'))),
+#   upper = list(combo = wrap("box", outlier.shape = I('.'))), axisLabels = "internal")
+# 
+# ggsave("working/scatter.jpg")
+
+```
+
+As expected there is a strong correlation between fare_amount and trip_distance at 0.923 and to a far weaker extent trip_duration at 0.129. This appers that not many taxis were stuck in traffic as the rates change from distance based to time based if the taxi is not moving fast enough.
+The correlation between total_amount and fare_amount is such that at 0.982 any analysis can be done on the fare_amount and still lead to a good approximation of the total.
+
+There is also a weak correlation between  passenger_count and trip_distance at 0.106 and fare_amount and location (pickup longitude and latitude) at ±0.161.
+
+# Bivariate Plots Section
+Based on the results of the univariate analysis, we take a look at some of the relationships between variables.
+
+### Fare amount vs.trip_distance
+
+```{r Fare_amount vs. trip_distance, echo=FALSE}
+
+p1 <- ggplot(aes(x = trip_distance, y = fare_amount), data = subset(taxidata, taxidata$type == "yellow")) +
+  geom_jitter(color = I("#DED20E"), alpha = 0.2, size = 3, position = position_jitter(h = 0.2)) +
+  coord_cartesian(xlim = c(0, 200)) +
+  ggtitle(label = "Fare amount vs. distance (miles) - yellow taxis")
+
+p2 <- ggplot(aes(x = trip_distance, y = fare_amount), data = subset(taxidata, taxidata$type == "green")) +
+  geom_point(color= I("#5BC70C"), alpha = 0.2, size = 3, position = position_jitter(h = 0.2)) +
+  coord_cartesian(xlim = c(0, 200)) +
+  ggtitle(label = "Fare amount vs. distance (miles) - green taxis")
+
+grid.arrange(p1, p2, ncol = 1)
+
+```
+
+There is a linear relatonship bewteen fare_amount and trip_distance. However given the high correlation between fare and distance it is interesting to note that yellow taxis make twice as much money, $100 in general at upt to 30-35 miless vs. green taxis making up to $50 for up to 25 miles. The green taxis cover a smaller distance (difference of 5-10 miles) and make half the money.
+I wonder if this depends on the type (category) of trips being made.
+
+Interesting points to note on plots:
+Vertical line at distance = 0 miles for varying fares (yellow and green)
+Horizontal line at fare = $0 for varying distances. (yellow and green)
+Horizontal line at around $52. There is a flat rate of $52 from anywhere in Manhattan to JFK airport. This will account for this line. Hwoever the green taxis do not seeem to make these trips.
+
+### Better graph of median fare_amount vs. trip_distance
+
+```{r Median fare_amount vs. trip_distance, echo=FALSE}
+
+ggplot(aes(x = 5 * round(trip_distance/5), y = fare_amount), data = taxidata) +
+    geom_line(aes(color = type), stat = "summary", fun.y = median, size = 1) +
+  coord_cartesian(xlim = c(0,100)) +
+  ggtitle(label = "Median fare amount vs. distance") +
+  xlab("trip distance") +
+ scale_color_manual(values = c("green" = "#5BC70C", "yellow" = "#DED20E"), breaks = c("green", "yellow"))
+
+```
+
+Looking at the relationship bewteen fare amount and trip_distance it is clear the yellow taxis make a liitle more money on average up to around 21 miles and $52. After this green taxis make more money up to 35 miles with an average fare_amount of $98 vs. $78 for yellow. A whopping $20 difference. beyond 35 miles however thre is no data for green taxis.
+What kind of trips are occuring between 0 and 21 miles, and over 21 to 35 miles? To anser this question a  multivariate analysis was done by ratecodeid.
+
+
+### Types of trips bewteen 0 and 21 miles, 21 and 35 miles and over 35 miles.
+
+```{r Types of trip by trip_distance, echo=FALSE}
+taxidata.med <- taxidata[, c("trip_distance","fare_amount", "type", "ratecodeid", "payment_type")]
+taxidata.med$trip_distance <- 5 * round(taxidata$trip_distance/5)
+
+ggplot(aes(x = 5 * round(trip_distance/5), y = fare_amount, color = type), data = subset(taxidata.med,ratecodeid != "Unknown")) +
+    geom_line(aes(group = type), stat = "summary", fun.y = median, size = 1) +
+  coord_cartesian(xlim = c(0,100)) +
+  ggtitle(label = "Median fare amount vs. distance") +
+  xlab("trip distance") +
+  facet_wrap(~ratecodeid, scales ="free") +
+  scale_color_manual(values = c("green" = "#5BC70C", "yellow" = "#DED20E"), breaks = c("green", "yellow"))
+
+```
+
+The difference in fare is mainly due to the standard rate above 25 miles. Green taxis are earn fares  comparable to yellow taxis for trips to Newark and Nassau/Westchester trips.
+
+What kind of relationship exists between fare_amount and trip_duration?
+
+### Fare_amount vs. trip duration
+
+```{r Fare_amount vs. trip_duration, echo=FALSE}
+
+p1 <- ggplot(aes(x = trip_duration, y = fare_amount), data = subset(taxidata, taxidata$type == "yellow")) +
+  geom_jitter(color = I("#DED20E"), alpha = 0.2, size = 3, position = position_jitter(h = 0.2)) +
+  geom_smooth(color = "red") + 
+  coord_cartesian(xlim = c(0, 150)) +
+  ggtitle(label = "Fare amount vs. duration (minutes) - yellow taxis")
+
+p2 <- ggplot(aes(x = trip_duration, y = fare_amount), data = subset(taxidata, taxidata$type == "green")) +
+  geom_point(color= I("#5BC70C"), alpha = 0.2, size = 3, position = position_jitter(h = 0.2)) +
+  geom_smooth(color = "red") +
+  coord_cartesian(xlim = c(0, 200)) +
+  ggtitle(label = "Fare amount vs. duration (minutes) - gren taxis")
+
+grid.arrange(p1, p2, ncol = 1)
+cor(taxidata$fare_amount, taxidata$trip_duration)
+
+
+```
+
+The relationship between fare amount and trip_duration is not linear as shown by the 0.129 correlation result from the scatter matrix via the decreaing fares as trip duration goes beyond 40 minutes.
+This also due to the vertical trend at trip_duration = 0 and the horizontal line for trips to JFK airport at $52 (yellow taxis only).
+
+However  based on taxi operations fare is directly related to distanc and duration. Hence distance is directly related to duration. and the relationship should be more linear. To help eliminate some of what might be error values I removed the lower 1% of trip_duration values and also the top 99.95%, a total of 44 observations.
+
+### Removing possible errors and outliers in trip_duration
+
+```{r Remove errors and outliers for trip_duration, echo=FALSE}
+
+taxidata <- subset(taxidata, taxidata$trip_duration > quantile(taxidata$trip_duration, 0.01) & taxidata$trip_duration < quantile(taxidata$trip_duration, 0.999))
+
+```
+
+### Better data - recalculate correlations
+
+```{r calculate correlations, echos, FALSE}
+cor(taxidata$trip_distance, taxidata$fare_amount)
+cor(taxidata$trip_duration, taxidata$fare_amount)
+cor(taxidata$trip_duration, taxidata$trip_distance)
+
+```
+
+The correlations between fare and distance remain strong at 0.94. However once the outliers and potential error data was removed the correlation between fare and trip duration improved from 0.129 to 0.87. 
+This coincides with other analysis done as fare_amount is based on time-and-distance and the following can be stated:-
+
+1. A linear relationship exists between fare_amount and trip duration. It is not non-linear and confirms the fare_amount and time-and-distance relationship.
+
+2. New York city appears to have a rush hour lasting from 7am-1am. This implies that time-based rates are charged during these hours and hence fare and duration should be a linear relationship.
+
+3. Trip distance and trip duration themselves exhibit multicollinearity, hence only one of them will be used in any model I build.
+
+### Examine two key categorical variables - payment_type and ratecodeid
+
+At this stage we know that Credit cards and Cash dominante payment types (89%), and Standard rate trips dominate ratecodeid (97%). What do the median values for fare_amount look like split across the values of each of these categories.
+
+### Boxplot of fare_amount vs. payment type
+
+```{r Boxplot of payment type, echo=FALSE}
+
+ggplot(aes(x = payment_type, y = fare_amount), data = taxidata) +
+    geom_boxplot(color = "blue", outlier.color = "red", outlier.size = 2) +
+  coord_cartesian(ylim = c(-100,75)) +
+  ggtitle(label = "Statistics by category") +
+  xlab("payment type")
+
+by(taxidata$fare_amount, taxidata$payment_type, summary)
+
+```
+
+Credit card payments on average are $10.50 which is higher than cash payments at $9.00. Note that credit card payments include tips and cash does not. The fares that are disputed or result in no charge on average are $7.50 and $9.50 respectively. These are very low fares to dispute and likewise the no charge trips probably occured for reason other than price in some cases.
+The minimum value for cash payments is -$5. If a payment is categorize as Cash, then should we have negative fare_amount. Perhaps these are errors and the data can be adjusted accordingly.
+Dispute and No charge also have negative far that can be due to a refund, but will also be removed from the dataset as this cannot be verified.
+
+There are quite a number of outliers for both cash and credit cards. This suggests that while new yorkers favor short trips there are still opportunities for taxis to make money on the longer trips.
+
+#### Boxplot of fare_amount vs. ratecodeid
+
+```{r Boxplot of ratecodeid, echo=FALSE}
+
+ggplot(aes(x = ratecodeid, y = fare_amount), data = taxidata) +
+    geom_boxplot(color = "blue", outlier.color = "red", outlier.size = 2) +
+  coord_cartesian(ylim = c(-100,100)) +
+  ggtitle(label = "Statistics by category") +
+  xlab("rate code")
+
+by(taxidata$fare_amount, taxidata$ratecodeid, summary)
+
+```
+
+As expected the longer distance trips and JFK airport on average make the most money. Group rides however are not lucrative and don't appear to occuar very often as the 1st, median and 3rd quartile only differ by a $1.50.
+Standard rate trips have a median of $9.50, but have a wide range of values and outliers up to $113. 
+
+
+### Remove fare_amount values less than $0
+
+```{r Remove fare_amount values less than $0, echo=FALSE}
+
+taxidata <- subset(taxidata, taxidata$fare_amount >= 0)
+
+```
+
+
+
+# Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. How did the feature(s) of interest vary with other features in the dataset?
+
+The focus here was on fare_amount as his is the key variable determining trip costs. A scatter matrix was done and the correlation between total_amount and fare_amount is 0.982. This indicates that any analysis can be done on the fare_amount and still lead to a good approximation of the total.
+
+The strong correlation between fare_amount and trip_distance was confirmed via graphs. However a few intersting poings were noted:-
+
+1. What appeared to be a weak correlation between fare_amount and trip_duration, and frankly did not make any sense was shown to be misleading. An investigation was done into the why plots of fare_amount vs. trip_duration showed varying fares up to $200 for trip durations at or around 0 minutes, these values were removed from as the lowest 1%  duration data and are considered possible meter malfunction errors. A reassessment of fare duration correlation showed that the relationship is indeed linear as it should be.
+
+2. 7am-1am is rush hour traffic - as shown in the bar graph of pickup hour (pckhour). If this is the case then taxis should be constantly stuck in traffic and the rates switched from distanced based ($0.50 per 1/5 miles) to time based $0.50 per 60 seconds. Given the amount of short trips, passengers should be paying mainly time based rates. The exceptions of course are JFK flat rates, trips taken between 1am-6am, and trips going for longer distances - Newark, Nassau/Westchester.
+
+3. Fare_amount vs. trip_distance exhibited distinct groups.
+  i. The standard linear relationship between the two variables.
+  ii. A horizontal line around $52 for varying distnaces. This turned out to be trips to JFK from Manhattan charged at the flat rate.
+  iii. A vertical line for trips of approxiamtely 0 miles, but having a range of non-zero fare_amounts.
+  iv. A horizontal line around the x-axis for trips of varying distances, yet fare is around $0.
+  v. There are negative fares in the data. Under what conditions is a fare recorded as negative? Looking closer at the data shows that most of these fares fall into two areas No charge and Disputed fares. It is possible that a refund was offered or these can be meter errors.
+
+4. Fare_amount vs. trip_duration:- exhibited pretty much the same patterns as fare_amount vs. trip_distance. What appeared to be a non-linear relationship was corrected and was shown to be an actualy linear.
+
+
+
+### Did you observe any interesting relationships between the other features (not the main feature(s) of interest)?
+The relationship between fare_amount or more specificallyy negative fare amounts and ratecodeid. This implied errors in the meter malfucntioning occured. This data was removed.
+
+### What was the strongest relationship you found?
+
+Confirmation of the relationship between fare_amount and the time-and-distance relationship.
+This also by default validated the pickup hour (pckhour) data from the univariate analysis section. The city has about 19 hours of rush hour traffic and hence a lot of these trips should be based on time-based rates. This in turn should be reflected in a highly correlated relationship between fare_amount and trip_duration which was shown to be a value of 0.87
+
+
+# Multivariate Plots Section
+
+### Total_amount, fare_amount, tip_amount and other charges vs. distance and time
+
+Let's take  alook at all dollar values and they vary with each other and distance
+
+```{r Total_amount, fare_amount, tip_amount and other charges vs. distance and time, echo=FALSE}
+
+medcols <- c("fare_amount", "extra", "mta_tax", "improvement_surcharge", "tip_amount", "tolls_amount", "total_amount", "trip_distance", "trip_duration")
+
+# Get dollar value, trip distance and trip duration columns and smooth distance and durations
+amounts <- taxidata %>% dplyr::select(one_of(medcols))
+
+amounts[, c("trip_distance")] <- 2 * round(amounts$trip_distance/2)
+amounts[, c("trip_duration")] <- 5 * round(amounts$trip_duration/5)
+
+# Get medians of all amounts
+median_amounts <- amounts %>%
+                  group_by(trip_distance) %>%
+                  summarise(fare = median (fare_amount),
+                            mextra = median(extra),
+                            mta = median(mta_tax),
+                            imp_surcharge = median(improvement_surcharge),
+                            tip = median(tip_amount),
+                            tolls = median(tolls_amount),
+                            total = median(total_amount),
+                            n = n())
+
+ggplot(aes(x = trip_distance, y = total), data = median_amounts) +
+  geom_line(aes(color = "total")) +
+  geom_line(aes(y = fare, color = "fare")) +
+  geom_line(aes(y = tip, color = "tip")) +
+  geom_line(aes(y = tolls, color = "toll")) +
+  geom_line(aes(y = mextra + mta + imp_surcharge, color = "other charges")) +
+  coord_cartesian(xlim = c(0, 100)) +
+  labs(title = "The effect of tips, tolls and other charges on the final total paid", y = "Median amounts") +
+  scale_color_manual(values = c("total" = "blue", "fare" = "red", "tip" = "purple", "toll" = "green", "other charges" = "black"), breaks = c("total", "fare", "tip", "toll", "other charges"))
+
+```
+
+Total amount paid is mainly due to the base fare, tips and toll charges. These values must be included in any model. The effect of other charges is minimal. This is also reflected in the information at <http://www.nyc.gov/html/tlc/html/passenger/taxicab_rate.shtml> as these are flat charges regardless of distance traveled. It is also interesting to note that the higher fare the bigger the tip.
+
+### Further expansion on the effect of tips and tolls on the final total paid
+
+```{r Ecxpand of effect of tips and tolls on total_amount, echo=FALSE}
+
+ratio_amounts <- subset(amounts, amounts$total_amount > 0) %>%
+                  group_by(trip_distance) %>%
+                  mutate(fare_ratio = median(fare_amount/total_amount),
+                            tip_ratio = median(tip_amount/total_amount),
+                            tolls_ratio = median(tolls_amount/total_amount),
+                            n = n())
+
+ggplot(aes(x = trip_distance), data =ratio_amounts) +
+ # geom_line(aes(y = fare_amount)) +
+ geom_line(aes(y = fare_ratio, color = "fare")) +
+ geom_line(aes(y = tip_ratio, color = "tip")) +
+ geom_line(aes(y = tolls_ratio, color = "toll")) +
+ coord_cartesian(xlim = c(0, 87), ylim = c(0, 1)) +
+# scale_y_continuous(limits = c(0.10, 0.15)) + #, breaks = seq(0, 100, 10)) +
+ labs(title = "The amount of fare, tips and tolls that makeup the final total", y = "% of total amounts") +
+ scale_color_manual(values = c("fare" = "red", "tip" = "purple", "toll" = "green"), breaks = c("fare", "tip", "toll"))
+
+```
+
+The base fares make up 75% or more of the final amount paid.
+Tips are in general around 15-16%.
+Toll charges are $0 for shorter distances, but from about 16 miles can go up to 8-9%. at around 46 miles and just nder 5% tolls again start to trend downwards.
+
+
+### Fare amount, tips and tolls vs. distance, payment type, rate code id
+
+Let's take a closer look at fares, tips and tolls, as these are the three dominant factors in the final total.
+
+```{r Fare amount, tips and tolls vs. distance, payment type, rate code id, echo=FALSE}
+
+ggplot(aes(x = trip_distance, y = fare_amount), data = taxidata) +
+  geom_point(alpha = 0.2, color = "blue", size = 3, position = "jitter") +
+  geom_point (aes(y = tip_amount), alpha = 0.2, color = "purple", size = 3, position = "jitter") +
+  geom_point (aes(y = tolls_amount), alpha = 0.2, color = "orange", size = 3, position = "jitter") +
+  facet_grid(ratecodeid~payment_type, scales = "free_y") +
+  labs(title ="Fare amounts, tips and tolls by trip distance - various categories", y = "Fare amounts, tips and tolls")
+
+```
+
+All categories cash and credit card spayments, and the standard rate category for rate codes maintain the linear trend between fare_amounts with increasing distance.
+The vertical line around 0 miles occurs mainly for credit card payments. This could imply that the odometer was not working for these trips.
+
+It appears as if there is not much difference in fare_amount between cash and credit paying customers.
+
+### Count of trips by rate code
+We only have tip information for credit card customers.
+
+```{r Count of trips by rate code, payment type, echo=FALSE}
+
+ggplot(aes(x = ratecodeid, y = tip_amount), data = subset (taxidata, ratecodeid != "Unknown")) +
+  geom_bar(color = "blue", stat = "summary", fun.y = median, position = "stack") +
+  theme(axis.text.x=element_text(angle=90))
+
+```
+
+More tips are paid by credit card customers for JF and  Newark rates. This confirms what we saw previous with the line graphs that the longer the distance the more likely a customer is to pay tips.
+
+Now that we have some insight into the amount customers pay by payment type and rate codes. Let'slook at how these categories are affected by pickup location.
+
+### Pickup location
+
+```{r Pickup location by payment type, echo=FALSE}
+
+ggplot(aes(x = pickup_longitude, y = pickup_latitude), data = taxidata) +
+  geom_point(color = "blue", alpha = 1/2, size = 3) #+
+ # facet_wrap(~payment_type)
+
+```
+
+This shows that some of the data is definitely error observations, as iy is impossible for the taxis to drive to location (0,0) and the other cluster around 57 degrees latitude. Remove these errors from the data and most of the observations where the meter was suspected of malfunctioning would likely disappear.
+
+### Plot Pickup latitude vs. longitude and Fare_amount vs. distance after removing error location clusters
+Removing points at (0,0), in the middle of the ocean, and somehwere in Georgia, leaves the remaining points in the states of New York, New Jersey and Connecticut. 
+
+```{r Plot Fare_amount vs. distance after removing location errors, echo=FALSE}
+
+taxidata <- subset(taxidata, !(taxidata$pickup_longitude == 0 | taxidata$pickup_latitude > 50 | taxidata$pickup_latitude < 38))
+
+ggplot(aes(x = pickup_longitude, y = pickup_latitude), data = taxidata) +
+  geom_point(color = "blue", alpha = 1/2, size = 3) +
+  labs(title = "Trips shown by location coordinates - meter errors removed") #+
+ 
+
+
+```
+
+However we have another problem as this plot is not very useful for any type of analysis. The data looks like a big cluster i one location due to the nature of longitude and latidue coordinates. I will change location to something more meaningful.
+
+### Create a map of New York City boroughs
+
+```{r Map of NYC boroughs, echo=FALSE}
+
+# Load GeoJSON data of NYC borough map
+getbormap <-  readOGR("nyc_boroughs.geojson", "OGRGeoJSON")
+
+# Get taxi pickup coordinates
+coord <- taxidata[c("pickup_longitude", "pickup_latitude")]
+
+# Convert to class Spatial Points
+coord <- SpatialPoints(as.data.frame(coord))
+
+# Check that coordinate projection match
+proj4string(coord)
+proj4string(getbormap)
+proj4string(coord) <-  proj4string(getbormap)
+
+
+# Get boroughs associated with longitude, latitude coordinates
+bormap <- over(coord, getbormap)
+
+# Add borough info to taxidata data frame
+taxidata <- cbind(taxidata, bormap)
+
+# Transform the borough map for use by ggplot2
+getbormap@data$id = rownames(getbormap@data)
+getbormap.points <- fortify(getbormap, region = "id")
+borough.map <- merge(getbormap.points, getbormap@data, by = "id")
+
+# Add category for trips originating outside of any borough
+borcols <- c("boroughCode", "borough", "X.id")
+taxidata.bor <- taxidata %>%
+              dplyr::select(one_of(borcols))
+
+# Add new factor levels and replace NAs
+levels(taxidata.bor$borough) <- c(levels(taxidata.bor$borough), "Outside Boroughs")
+taxidata.bor$borough[is.na(taxidata.bor$borough)] <- "Outside Boroughs"
+
+levels(taxidata.bor$X.id) <- c(levels(taxidata.bor$X.id), "None")
+taxidata.bor$X.id[is.na(taxidata.bor$X.id)] <- "None"
+
+taxidata.bor$boroughCode[is.na(taxidata.bor$boroughCode)] <- 6
+  
+taxidata[borcols] <- taxidata.bor[borcols]
+
+levels(borough.map$borough) <- c(levels(borough.map$borough), "Outside Boroughs")
+levels(borough.map$X.id) <- c(levels(borough.map$X.id), "None")
+
+
+```
+
+### Create Centroids for boroughs
+Add coordinates for the center of each borough
+
+```{r Centroids for boroughs, echo=FALSE}
+
+bnames <- borough.map %>%
+          group_by(borough) %>%
+          dplyr::select(borough) %>%
+          distinct()
+
+# Caclculate centroids
+cents <- sapply(unique(borough.map$borough), function(x) gCentroid( SpatialPoints(borough.map[borough.map$borough == x, c('long','lat')] )))
+cents <- do.call("rbind", lapply(cents, as.data.frame))
+
+# Nudge points so that they are at the center of borough map (graphically)
+cents[1:5, 1:2] <- cents[1:5, 1:2] + matrix(c(0, 0, -0.05, -0.015, 0.01, 0, 0.04, 0.02, 0.02,0.02), ncol=2)
+
+# Add centroid for data outside any borough
+cents <- cents %>% rbind(c(-74.2, 40.85))
+
+# Add borough names to centroid coordinate
+cents$bnames <- rbind(bnames, levels(taxidata$borough)[6])
+```
+
+### Plot locations by borough
+
+```{r Plot locations by borough, echo=FALSE}
+
+ggplot(data = borough.map, aes(x = long, y = lat, group=group)) +
+  geom_polygon(fill = I("#FEE6CE")) +
+  geom_path(color="white", size = 1) +
+  geom_point(aes(x = pickup_longitude, y = pickup_latitude, color = borough, group = NULL), data = taxidata, size = 2, alpha = 0.4, position = "jitter") +
+  coord_fixed(xlim = seq(-74.25, -73.7, 0.01), ylim = seq(40.48, 40.93, 0.01), ratio = 1) +
+  scale_fill_brewer("Boroughs", palette = "PuRd") +
+  guides(fill=FALSE, colour = guide_legend(override.aes = list(alpha = 1))) + theme(legend.position = "right") +
+  ggtitle("Pickup locations by borough")
+
+table(taxidata$borough)
+
+```
+
+87% of the trips start in Manhattan.
+
+### Plot median fare_amount by location (borough)
+We have already determined that the most important prices are fare amount, tips, tolls, and total amount.
+
+```{r Plot median fare_amount by borough, echo=FALSE}
+
+median_amount.bor <- taxidata %>%
+                  group_by(borough) %>%
+                  summarise(fare = median (fare_amount),
+                            tip = median(tip_amount),
+                            tolls = median(tolls_amount),
+                            total = median(total_amount),
+                            n = n())
+median_amount.bor.map <- inner_join(median_amount.bor, borough.map, by = "borough")
+
+# Get counts of each category for realistics comparision of averages
+cents.n <- cents[c("x", "y")]
+cents.n$borough <- cents$bnames$borough
+cents.n <- inner_join(cents.n, median_amount.bor[, c("borough", "fare", "n")], by = "borough")
+
+ggplot(data = median_amount.bor.map, aes(x = long, y = lat, group=group)) +
+  geom_polygon(aes(fill = sqrt(n)), color = "black") +
+  scale_fill_gradientn(name = "Number of taxi \ntrips in borough", colours = brewer.pal(5, "GnBu"), na.value="white", breaks = c(0, 100, 223.607, 316.228), labels = c("0", "10,000", "50,000", "100,000")) +
+  
+  geom_point(data = median_amount.bor, aes(x = -74.2, y = 40.85, fill = fare, group = NULL), shape = 21, size = 30, stroke = 0, color = NA) + 
+  geom_text(data = cents, aes(x = x, y = y, label = bnames, group =NULL), size=4.5, color = "black") +
+  geom_text(data = cents.n, aes(x = x, y = y+0.025, label = ifelse(is.na(fare), NA, paste0("$", fare)), group = borough), color = "black", size=4.5) +
+  theme(panel.background = element_rect(fill = "darkgrey"))
+  
+
+# Get  median fares by borough
+print("Median fares by borough")
+median_amount.bor[c("borough", "fare", "n")]
+
+# Get overall median for this dataset
+print("Median fare for entire dataset")
+median(taxidata$fare_amount)
+
+```
+
+On average the highest fares are made when the pickup location is in Queens at $23 and the lowest in Manhattan at $9.50. We know that Manhattan accounts for 84% of all taxi traffic. The overall average for taxis is $10.00. It is likely that a driver stands to make more money for pickup locations in Queens. This is even more important as there are 10 times more trips taking place in Manhattan than Queens. Manhattan customers are not traveling as far on average so that can account for low fares, but what accounts for the high faresstartingg in Queens?.
+Trips originating outside of the city limits have fares of only $13.50 on average. This is likely due to the longer distances.
+
+### Median fare by payment type in a borough
+
+```{r Median fare by payment type in a borough, echo=FALSE}
+
+median_amount.bor.pay <- taxidata %>%
+                  group_by(borough, payment_type) %>%
+                  summarise(fare = median(fare_amount),
+                            tip = median(tip_amount),
+                            tolls = median(tolls_amount),
+                            total = median(total_amount),
+                            n = n()) %>%
+                  ungroup()  %>%
+                  complete(borough, payment_type, fill = list(n=0))
+
+
+
+# Join summary data to map data too form one data frame for plotting
+median_amount.bor.pay.map <- inner_join(median_amount.bor.pay, borough.map, by = "borough")
+median_amount.bor.pay.map <- as.data.frame(median_amount.bor.pay.map)
+
+# Get counts of each category for realistics comparision of averages
+cents.n <- cents[c("x", "y")]
+cents.n$borough <- cents$bnames$borough
+cents.n <- inner_join(cents.n, median_amount.bor.pay[, c("payment_type", "borough", "fare", "n")], by = "borough")
+
+ggplot(data = subset(median_amount.bor.pay.map, n != 0), aes(x = long, y = lat, group=group)) +
+  geom_polygon(aes(fill = sqrt(n)), color = "black") +
+  coord_fixed(xlim = seq(-74.25, -73.7, 0.01), ylim = seq(40.48, 40.93, 0.01), ratio = 1) +
+  scale_fill_gradientn(name = "Number of taxi \ntrips in borough", colours = brewer.pal(5, "GnBu"), na.value="white", breaks = c(10, 100, 223.607, 316.228), labels = c("100", "10,000", "50,000", "100,000")) +  
+  geom_point(data = subset(cents.n, n != 0 & borough == "Outside Boroughs"), aes(x = -74.2, y = 40.85, fill = sqrt(n), group = NULL), size = 30, shape = 21, stroke = 0, color = NA) + 
+  geom_text(data = subset(cents.n, n != 0), aes(x = x, y = y, label = borough, group = NULL), size = 4.5, color = "black") +
+  geom_text(data = cents.n, aes(x = x, y = y+0.025, label = ifelse(is.na(fare), NA, paste0("$", fare)), group = borough), color = "black", size=4.5) +
+  facet_wrap(~payment_type) +
+  theme(panel.background = element_rect(fill = "darkgrey"))
+
+table(taxidata$payment_type) 
+
+unique((subset(median_amount.bor.pay.map, median_amount.bor.pay.map$payment_type == "Dispute" & borough == "Outside Boroughs"))$n)
+subset(unique(median_amount.bor.pay[c("fare", "payment_type", "borough", "n")]), payment_type == "Dispute")
+
+```
+
+Staten island has the second highest credit card paying customers when it comes to fare_amount at $28, but on closer inspection only 1 customer falls into this category. Any realistic interpretation of this analysis will reject small sample sizes as this will only lead to misleading conclusions. To aid the viewer sample sizes are indicated by the colour of the borough.
+
+Queens customers pay the highest fare overall at $30.50 and use credit cards to do so. This is two and a half times that paid on average by Brooklyn customers at $12.50 and twice that paid by those with pickup points outside of the boroughs. 
+Queens also has the highset paying cash customers at $13.
+Brooklyn customers also have the highest payments for disputed customers at $13.80, Manhattan has the highest number of disputed customers at 133 vs. Brooklyn with 30 and Queens with 40. This is expected as 87% of the taxi traffic originates form Manhattan.
+
+What accounts for the high fares paid by Queens customers. Could it be associated with the rates or the distance tarvelled. We already know most new yorkers take short trips up to 5 miles, so are these Queens customers the ones going for longer distances or maybe to JFK. Lets look at these observations by ratecodeid.
+
+### Median fare by Credit card/Cash payments and ratecodeid in a borough
+
+```{r Median fare by payment type and rate code id in a borough, echo=FALSE}
+
+median_amount.bor.pay_rcid <- taxidata %>%
+                  group_by(borough, payment_type, ratecodeid) %>%
+                  summarise(fare = median (fare_amount),
+                            tip = median(tip_amount),
+                            tolls = median(tolls_amount),
+                            total = median(total_amount),
+                            n = n()) %>%
+                  ungroup() %>%
+                  ungroup() %>%
+                  complete(borough, payment_type, ratecodeid, fill = list(n=0)) %>%
+                  filter((payment_type == "Credit card" | payment_type == "Cash") & !(ratecodeid ==                     "Unknown"))
+              
+median_amount.bor.pay_rcid.map <- inner_join(median_amount.bor.pay_rcid, borough.map, by = "borough")
+median_amount.bor.pay_rcid.map <- as.data.frame(median_amount.bor.pay_rcid.map)
+
+# Get counts of each category for realistics comparision of averages
+cents.n <- cents[c("x", "y")]
+cents.n$borough <- cents$bnames$borough
+cents.n <- inner_join(cents.n, median_amount.bor.pay_rcid[, c("ratecodeid", "payment_type", "borough", "fare", "n")], by = "borough")
+
+ggplot(data = subset(median_amount.bor.pay_rcid.map, n != 0), aes(x = long, y = lat, group=group)) +
+  geom_polygon(aes(fill = sqrt(n)), color = "black") +
+  coord_fixed(xlim = seq(-74.25, -73.7, 0.01), ylim = seq(40.48, 40.93, 0.01), ratio = 1) +
+ scale_fill_gradientn(name = "Number of taxi \ntrips in borough", colours = brewer.pal(5, "GnBu"), na.value="white", breaks = c(10, 100, 223.607, 316.228), labels = c("100", "10,000", "50,000", "100,000")) + 
+  geom_point(data = subset(cents.n, n != 0 & borough == "Outside Boroughs"),  aes(x = -74.1, y = 40.85, fill = sqrt(n), group = NULL), shape = 21, size = 25, stroke = 0, color = NA) +
+  guides(alpha = "none") +
+  geom_text(data = subset(cents.n, n != 0), aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = y, label = borough, group =NULL), size=3.5, colour="black") +
+ geom_text(data = cents.n, aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = ifelse(borough == "Outside Boroughs", y+0.03, y+0.025), label = ifelse(is.na(fare), NA, paste0("$", fare)), group = payment_type), size=4, colour="black") + 
+  facet_grid(payment_type~ratecodeid, drop = TRUE) +
+  theme(panel.background = element_rect(fill = "darkgrey"))
+
+subset(unique(median_amount.bor.pay_rcid.map[c("total", "payment_type", "ratecodeid", "borough", "n")]), payment_type == "Credit card" & borough == "Queens")
+
+```
+
+87% of all trips are made from Manhattan. Of these, 98% are made using the standard rate or made to Newark. The standard rate average fare of $8.50 and $10 for cash and credit card payments does not differ very much from the overall taxi trip average of $10.
+The same cannot be said for Queens where the cash customers pay $1 more on average and credit card customers pay more thah 2.5 times the average at $26.50. Who are these standard rate Queens customers that are in the 10,000s compared to Manhattan customers in the 100,000s, yet they are paying far more money for taxi trips. This could indicate that these standard customers are taking longer trips or caught in bad traffic.
+
+Even for taxis going to Nassau/Westchester or Newark from Queens, fares are just above/below twice that for trips originating in Manhattan.
+
+
+### Observe the how median fares vary by borough and time of day.
+
+This will verify if the increased average fares for Queens customers is affected more by the 16 hour New York City rush hour traffic.
+To do this analysis I created a categorical variable from the pckhour field and labeled appropriately. Intervals were chosen based on the univariate analysis of pckhour.
+Early Morning = 2am - 6am
+Morning Rush Hour = 7am - 10am
+Afternoon Rush Hour = 11am - 3pm
+Evening Rush Hour = 4pm - 7pm
+Nighttime Rush Hour = 8pm - 10pm
+Late Night = 11pm - 1am
+
+```{r Median fare_amount by borough and time of day}
+
+# Create time of day categories for taxi pickup hour
+
+taxidata$time_of_day <- cut(taxidata$pckhour, breaks = c(23, 2, 7, 11, 16, 20, 22, 0), right = FALSE)
+
+# Change factor level [0, 2) to [23 ,2)
+levels(taxidata$time_of_day)[1] <- "[23 ,2)"
+
+# Change factor level from [22, 23) to [20 ,22) - Add 10pm traffic to 8-10pm category
+taxidata$time_of_day[taxidata$time_of_day == levels(taxidata$time_of_day)[7]] <- "[20,22)"
+
+# Change NA level to [23, 2)
+taxidata$time_of_day[is.na(taxidata$time_of_day)] <- "[23 ,2)"
+
+# Create new factor column based on old factor without the unused level [22, 23)and add labels
+taxidata $time_of_day <- factor(taxidata$time_of_day, levels = levels(taxidata$time_of_day)[1:6], labels = c("Early Morning", "Morning Rush Hour", "Afternoon Rush Hour", "Evening Rush Hour", "Nighttime Rush Hour", "Late Night"))
+
+# Plot graph showing beakdown of median fare_amount by borough and time of day
+
+median_amount.bor.tod <- taxidata %>%
+                  group_by(borough, payment_type, ratecodeid, time_of_day) %>%
+                  summarise(fare = median (fare_amount),
+                            tip = median(tip_amount),
+                            tolls = median(tolls_amount),
+                            total = median(total_amount),
+                            n = n()) %>%
+                  ungroup() %>%
+                  ungroup() %>%
+                  ungroup() %>%
+                  complete(borough, payment_type, time_of_day, fill = list(n=0)) %>%
+                  filter((payment_type == "Credit card" | payment_type == "Cash") & ratecodeid == "Standard rate")
+              
+median_amount.bor.tod.map <- inner_join(median_amount.bor.tod, borough.map, by = "borough")
+median_amount.bor.tod.map <- as.data.frame(median_amount.bor.tod.map)
+
+# Get counts of each category for realistics comparision of averages
+cents.n <- cents[c("x", "y")]
+cents.n$borough <- cents$bnames$borough
+cents.n <- inner_join(cents.n, median_amount.bor.tod[, c("time_of_day", "payment_type", "borough", "fare", "n")], by = "borough")
+
+ggplot(data = subset(median_amount.bor.tod.map, n != 0), aes(x = long, y = lat, group=group)) +
+  geom_polygon(aes(fill = sqrt(n)), color = "black") +
+  coord_fixed(xlim = seq(-74.25, -73.7, 0.01), ylim = seq(40.48, 40.93, 0.01), ratio = 1) +
+  scale_fill_gradientn(name = "Number of taxi \ntrips in borough", colours = brewer.pal(5, "GnBu"), na.value="white", breaks = c(10, 54.772, 100, 158.114, 223.607, 316.228), labels = c("100", "3000", "10,000", "25000", "50,000", "100,000")) + 
+  geom_point(data = subset(cents.n, n != 0 & borough == "Outside Boroughs"),  aes(x = -74.1, y = 40.85, fill = sqrt(n), group = NULL), shape = 21, size = 25, stroke = 0, color = NA) +
+  guides(alpha = "none") +
+  geom_text(data = subset(cents.n, n != 0), aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = y, label = borough, group =NULL), size=3.5, colour="black") +
+ geom_text(data = cents.n, aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = ifelse(borough == "Outside Boroughs", y+0.03, y+0.025), label = ifelse(is.na(fare), NA, paste0("$", fare)), group = payment_type), size=4, colour="black") + 
+  facet_grid(payment_type~time_of_day, drop = TRUE) +
+  theme(panel.background = element_rect(fill = "darkgrey"))
+
+# Average fare by time of day
+print("AVERAGE FARE AMOUNT FOR BY TIME OF DAY")
+by(taxidata$fare_amount, taxidata$time_of_day, median)
+writeLines("\n---------------------------------------------\n")
+
+```
+
+Let's keep the focus on Manhattan and Queens due to the fact that Manhattan has the most trips in the dataset, yet trips originating in Queens earn higher fares.
+
+The overall average fare is between $9.50-$10 and does not vary by time of day. However if we look at the figure we see that trips from Queens make the most money during any period of the day. This is especially true for credit card customers in the Early Morning and from the Afternoon Rush Hour to Late Night ending at 1am where the average fare varies from $21-$30.50 and is up to 3 times that of those originating in Manhattan. Morning Rush Hour customers pay $3 more on average than Manhattan customers at $13.
+Cash paying customers on the other hand pay about $2.50-$5.50 dollars for all time periods except Early Morning and Morning Rush Hour where the earnings are comparable  with Manhattan customers and the overall time period averages.
+
+In fact median fares from Manhattan do not vary from the overall averages for each time of day category. This is expected as trips from Manhattan makeup 87% of the data and hence will dominate the median averages.
+
+No matter what time of day a taxi works it is likely to make more if the trip originated in Queens.
+
+### Observe How Median fare_amount is Affected by Origin and Destination of Trip
+
+This will confirm which is the most important factor for these standard rate Queens and Manhattan customers, time of day or distance traveled.
+
+```{r Median fare_amount b origin/destination borough}
+
+#destborough <- 
+
+# Get taxi dropoff coordinates
+drpcoord <- taxidata[c("dropoff_longitude", "dropoff_latitude")]
+
+# Convert to class Spatial Points
+drpcoord <- SpatialPoints(as.data.frame(drpcoord))
+
+# Check that coordinate projection match
+proj4string(drpcoord)
+proj4string(drpcoord) <-  proj4string(getbormap)
+
+
+# Get destination boroughs associated with dropoff longitude and latitude coordinates
+destbor <- over(drpcoord, getbormap)
+
+# Add new factor levels and replace NAs
+levels(destbor$borough) <- c(levels(destbor$borough), "Outside Boroughs")
+destbor$borough[is.na(destbor$borough)] <- "Outside Boroughs"
+
+# Add destination borough info to taxidata data frame
+# taxidata <- cbind(taxidata, destbor$destborough)
+# names(taxidata)[46] <- "destborough"
+
+names(destbor)[2] <- "destborough"
+taxidata$destborough <- destbor$destborough
+
+median_amount.bor.pckdst <- taxidata %>%
+                  group_by(borough, destborough, ratecodeid) %>%
+                  summarise(fare = median (fare_amount),
+                            tip = median(tip_amount),
+                            tolls = median(tolls_amount),
+                            total = median(total_amount),
+                            n = n()) %>%
+                  ungroup() %>%
+                  ungroup() %>%
+                  complete(borough, destborough, ratecodeid, fill = list(n=0)) %>%
+                  filter(ratecodeid == "Standard rate")
+
+# Rename borough column to destborough
+borough.map <- rename(borough.map, c(borough = "destborough"))
+median_amount.bor.pckdst.map <- inner_join(median_amount.bor.pckdst, borough.map, by = "destborough")
+median_amount.bor.pckdst.map <- as.data.frame(median_amount.bor.pckdst.map)
+
+median_amount.bor.pckdst.map <- median_amount.bor.pckdst.map %>%
+                                filter(borough == "Queens" | borough == "Manhattan")
+  
+median_amount.bor.pckdst <- median_amount.bor.pckdst %>%
+                                filter(borough == "Queens" | borough == "Manhattan")
+
+# Get counts of each category for realistics comparision of averages
+cents.n <- cents[c("x", "y")]
+cents.n$borough <- cents$bnames$borough
+cents.n$destborough <- cents.n$borough
+dropbor <- names(cents.n) %in% c("borough")
+cents.n <- inner_join(cents.n[!dropbor], median_amount.bor.pckdst[, c("destborough", "borough", "fare", "n")], by = "destborough")
+
+
+
+ggplot(data = subset(median_amount.bor.pckdst.map, n != 0), aes(x = long, y = lat, group=group)) +
+  geom_polygon(aes(fill = sqrt(n)), color = "black") +
+  coord_fixed(xlim = seq(-74.25, -73.7, 0.01), ylim = seq(40.48, 40.93, 0.01), ratio = 1) +
+  scale_fill_gradientn(name = "Number of taxi \ntrips in borough", colours = brewer.pal(5, "GnBu"), na.value="white", breaks = c(10, 54.772, 100, 158.114, 223.607, 316.228), labels = c("100", "3000", "10,000", "25000", "50,000", "100,000")) +
+  geom_point(data = subset(cents.n, n != 0 & destborough == "Outside Boroughs"),  aes(x = -74.1, y = 40.85, fill = sqrt(n), group = NULL), shape = 21, size = 25, stroke = 0, color = NA) +
+  geom_text(data = subset(cents.n, n != 0), aes(x = ifelse(destborough == "Outside Boroughs", x+0.1, x), y = y, label = destborough, group =NULL), size=3.5, colour="black") +
+ geom_text(data = cents.n, aes(x = ifelse(destborough == "Outside Boroughs", x+0.1, x), y = ifelse(destborough == "Outside Boroughs", y+0.03, y+0.025), label = ifelse(is.na(fare), NA, paste0("$", fare)), group = borough), size=4, colour="black") + 
+  facet_grid(borough~destborough, drop = TRUE) +
+  theme(panel.background = element_rect(fill = "darkgrey"))
+
+
+print("AVERAGE FARE AMOUNT TO ALL DESTINATION BOROUGHS")
+by(taxidata$fare_amount, taxidata$destborough, median)
+writeLines("\n---------------------------------------------\n")
+
+# Trips starting and ending in Manhattan
+nrow(taxidata[which(taxidata$borough == "Manhattan" & taxidata$destborough == "Manhattan" & taxidata$ratecodeid == "Standard rate"), ])
+# Trips starting in Manhattan
+nrow(taxidata[which(taxidata$borough == "Manhattan"), ])
+
+# Trips starting and ending in Queens
+nrow(taxidata[which(taxidata$borough == "Queens" & taxidata$destborough == "Queens" & taxidata$ratecodeid == "Standard rate"), ])
+# Trips starting in Queens
+nrow(taxidata[which(taxidata$borough == "Queens"), ])
+
+```
+
+On average trips originating in Queens make more money than those starting in Manhattan for standard rates trips. The only exception are trips beginning and ending in Queens.
+From these graphs and tables however we can see the main the reason trips originating in Manhattan on average make far less money than those originating in Queens. 
+91% (167,229/184,408) of trips starting in Manhattan remain in Manhattan or in other words short trips. This is versus 48% (8802/18244) of trips the trips starting in Queens and remaining in Queens.
+
+In addition, for longer distances, trips starting in Queens and going to other boroughs make from $14 up to $23 (for Outside Boroughs) more than those from Manhattan heading to those same destinations. The only exception to this "rule" is when the destination is Queens, as in these cases trips originating in Queens will be considered short trips.
+
+Distance also plays a role in addition to time of day in the amount of money earned per trip on average. This data shows that standard rate trips from Queens throughout the day will make more money per trip  when going to destinations outside of the Queens borough.
+We saw in the previous section time of day is also a factor as outside of the Early Morning and Morning Rush Hour cash customers, trips from Queens exceed Manhattan earnings by up to 3 times the fare.
+
+Finally given the volume of yellow taxis in this dataset around 87%. It can be concluded that most of these lower paying Manhattan-to-Manhattan trips on average $9 are being done by yellow taxis.
+
+### Background Information on New York City Taxis
+
+Yellow (Medallion) taxis are concentrated in Manhattan, but are allowed to pickup passengers anywhere in the five boroughs. Green (Boro) taxis are only allowed to pickup passengers from the streets in Upper Manhattan, the Bronx, Brooklyn, Staten Island and Queens (exceptions being LaGuardia and JFK airports), but can pickup passengers from airports if it is a pre-arranged trip. Green taxis can drop passengers anywhere.
+
+Green taxis were introduced in 2013 with the goalof improving access to street hail taxis and to serve areas traditionally underserved by the yellow taxis. So far it is proving rather lucrative compared to yellow taxis that are operating mainly from Manhattan. The fact that they cannot be dispatch to upper Manhattan, LaGuardia or JFK airports is not hurting the green taxi sector. In fact it is to their advantage that they continue working within the current "limitations" set by the Taxi and Limousines Commission (TLC) as these routes and passengers are very rewarding especially after the early morning and morning rush hour periods. Outside of these periods green taxi drivers can earn 2-3 times more from credit card customers compared to yellow taxis - before tips are included.
+Yet, both types of taxis are governed by the same rates if it is a street hail, but the base sets the rates if the trip is pre-arranged.
+
+An interesting point to note is that the GPS tracker on green taxis does not allow the meter to work if the pickup location is inside of Upper (northern) Manhattan or located in the airports. Could this be the reason why some trips have recorded coordinates of (0,0)?
+
+
+### Median fare_amount by trip_type (Street hail, Dispatch) - Standard rate only
+
+Given that the base sets the rates for dispatched trips, let's look at the earnings of the green and yellow taxis by trip_type. To continue from the last few sections, the focus will be on standard rate trips first in order to determine who is making these high earning standard rate fares.
+
+```{r Median fare_amount by trip_type, echo=FALSE}
+
+median_amount.bor.triptype <- taxidata %>%
+                  filter(ratecodeid == "Standard rate") %>%
+                  group_by(borough, payment_type, trip_type) %>%
+                  summarise(fare = round(median(fare_amount), 2),
+                            n = n()) %>%
+                  ungroup() %>%
+                  ungroup() %>%
+                  complete(borough, payment_type, trip_type, fill = list(n=0)) %>%
+                  filter(payment_type == "Credit card" | payment_type == "Cash")
+
+# Change the name ofdestborough column back to borough
+borough.map <- rename(borough.map, c(destborough = "borough"))
+
+              
+median_amount.bor.ttype.map <- inner_join(median_amount.bor.triptype, borough.map, by = "borough")
+median_amount.bor.ttype.map <- as.data.frame(median_amount.bor.ttype.map)
+
+# Get counts of each category for realistics comparision of averages
+cents.n <- cents[c("x", "y")]
+cents.n$borough <- cents$bnames$borough
+cents.n <- inner_join(cents.n, median_amount.bor.triptype[, c("payment_type", "trip_type", "borough", "fare", "n")], by = "borough")
+
+ggplot(data = subset(median_amount.bor.ttype.map, n != 0), aes(x = long, y = lat, group=group)) +
+  geom_polygon(aes(fill = sqrt(n)), color = "black") +
+  coord_fixed(xlim = seq(-74.25, -73.7, 0.01), ylim = seq(40.48, 40.93, 0.01), ratio = 1) +
+  scale_fill_gradientn(name = "Number of taxi \ntrips in borough", colours = brewer.pal(5, "GnBu"), na.value="white", breaks = c(10, 54.772, 100, 158.114, 223.607, 316.228), labels = c("100", "3000", "10,000", "25000", "50,000", "100,000")) +
+  geom_point(data = subset(cents.n, n != 0 & borough == "Outside Boroughs"),  aes(x = -74.1, y = 40.85, fill = sqrt(n), group = NULL), shape = 21, size = 25, stroke = 0, color = NA) +
+  geom_text(data = subset(cents.n, n != 0), aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = y, label = borough, group = NULL), size=3.5, colour="black") +
+ geom_text(data = cents.n, aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = ifelse(borough == "Outside Boroughs", y+0.03, y+0.025), label = ifelse(is.na(fare), NA, paste0("$", fare)), group = payment_type), size=4, colour="black") + 
+  facet_grid(trip_type~payment_type, drop = TRUE) +
+  theme(panel.background = element_rect(fill = "darkgrey")) +
+  ggtitle("Average fares for green and yellow taxis (standard rate only)")
+  
+  
+print("AVERAGE FARE AMOUNT BY BOROUGH")
+by(taxidata$fare_amount, taxidata$borough, median)
+writeLines("\n---------------------------------------------\n")
+
+```
+
+The data divided is divided by trip_type. However there is no such information for yellow taxis, as these taxis are street hail taxis only and are noted by the No info category. The Dispatcher and Street-hail categories refer to the green taxis. Therefore the graphic also gives underlying information about the break down of median fare_amount by yellow and green taxis.
+
+Compared to green taxis, yellow taxis make the highest fares on average from trips originating in Queens at $31.50 compared to $11 for green taxis (street hail) and $9.5 (dispatched) for credit card customers.
+Likewise for cash paying customers, yellow taxis make $26 on average fares versus $8.50 for green taxis (street hail) and $8 (dispatched).
+Yellow taxi may be based in Manhattan, but  the trips originating in Queens represent 3 times the average earnings of $10 for all taxis. Compare this to green taxis who are based in Queens but are earning a third of what yellow taxis earn in this borough. Note this if for standard rates only.
+
+There might be opportunities for green taxis to make money from dispatched trips originating in Brooklyn with customers paying on average $15.50 and $17.50 dollars for cash and credit card trips respectively.
+
+
+### Median fare_amount by trip_type (Street hail, Dispatch) - Standrad rate and JFK trips
+
+Considering that JFK and LaGuardia are both in Queens, and that green taxis are prohibited from airport-based street hails, lets take a look at the effect of JFK trips on these average fares.
+
+```{r Median fare amount by trip_type and ratecode id of standard rate and JFK}
+
+table(taxidata$ratecodeid)
+
+median_amount.bor.triptype <- taxidata %>%
+                  filter((ratecodeid == "Standard rate" | ratecodeid == "JFK")) %>%
+                  group_by(borough, payment_type, trip_type) %>%
+                  summarise(fare = round(median(fare_amount), 2),
+                            n = n()) %>%
+                  ungroup() %>%
+                  ungroup() %>%
+                  complete(borough, payment_type, trip_type, fill = list(n=0)) %>%
+                  filter((payment_type == "Credit card" | payment_type == "Cash"))
+
+median_amount.bor.ttype.map <- inner_join(median_amount.bor.triptype, borough.map, by = "borough")
+median_amount.bor.ttype.map <- as.data.frame(median_amount.bor.ttype.map)
+
+# Get counts of each category for realistics comparision of averages
+cents.n <- cents[c("x", "y")]
+cents.n$borough <- cents$bnames$borough
+cents.n <- inner_join(cents.n, median_amount.bor.triptype[, c("payment_type", "trip_type", "borough", "fare", "n")], by = "borough")
+
+
+ggplot(data = subset(median_amount.bor.ttype.map, n != 0), aes(x = long, y = lat, group=group)) +
+  geom_polygon(aes(fill = sqrt(n)), color = "black") +
+  coord_fixed(xlim = seq(-74.25, -73.7, 0.01), ylim = seq(40.48, 40.93, 0.01), ratio = 1) +
+  scale_fill_gradientn(name = "Number of taxi \ntrips in borough", colours = brewer.pal(5, "GnBu"), na.value="white", breaks = c(10, 54.772, 100, 158.114, 223.607, 316.228), labels = c("100", "3000", "10,000", "25000", "50,000", "100,000")) +
+  geom_point(data = subset(cents.n, n != 0 & borough == "Outside Boroughs"),  aes(x = -74.1, y = 40.85, fill = sqrt(n), group = NULL), shape = 21, size = 25, stroke = 0, color = NA) +
+  geom_text(data = subset(cents.n, n != 0), aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = y, label = borough, group = NULL), size=3.5, colour="black") +
+ geom_text(data = cents.n, aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = ifelse(borough == "Outside Boroughs", y+0.03, y+0.025), label = ifelse(is.na(fare), NA, paste0("$", fare)), group = payment_type), size=4, colour="black") + 
+  facet_grid(trip_type~payment_type, drop = TRUE) +
+  theme(panel.background = element_rect(fill = "darkgrey")) +
+  ggtitle("Average fares for green and yellow taxis (standard rate and JFK)")
+
+```
+
+
+While the numbers for the green taxi trips are a mere fraction of the their overall customers, on average they make fares comparative to yellow street hail taxis at $27.50 versus $35.50 (trips starting in Queens). Green taxis also earn higher averages for credit card, dispatched trips starting in Brooklyn and Manhattan at $33 and $20 versus street hail trips for yellow cabs at $13 and $10 respectively. 
+
+Note however the sample sizes are small, less than 100 in this case. Compare this to the sample sizes for yellow taxis originating in Queens and anattan in order of 10,000s and 100,000s.
+
+Standard rates and JFK - The yellow taxi earnings from Queens only increased by a mere $4 (credit card) and $6 (cash) when JFK traffic was taken into consideration. The traffic for other boroughs had little to no increase. This shows the dominance of standard rate trips in the yellow taxi sector. In theory the flat rate trips fom JFK at $52 should significantly have improved the average fares.
+
+Due to the nature of the yellow taxi sector all of these trips are street hail. 
+It is interesting that the root of these high earnings are not the JFK trips due to the regulations preventing green taxis from pickups in upper Manhattan or the Queens based LaGuardia and JFK airports, thus giving yellow taxis the advange in this area. In theory this sector should earn more from these JFK customers, yet their higher earnings on average are coming from standard rate customers in the borough where green taxis are based.
+
+Note in this sample there are no JFK trips for green taxis. This suggests that in the original dataset JFK trips are much smaller in number for the green sector.
+
+
+
+### Quick test to confirm that these are lucrative trips originating in Queens are JFK customers
+
+```{r Queens trips for yellow taxis, echo=FALSE}
+
+median_amount.bor.ttype_rcid <- taxidata %>%
+                  filter((ratecodeid != "Group ride" | ratecodeid != "Unknown")) %>%
+                  group_by(borough, payment_type, trip_type) %>%
+                  summarise(fare = median (fare_amount),
+                            n = n()) %>%
+                  ungroup() %>%
+                  ungroup() %>%
+                  complete(borough, payment_type, trip_type, fill = list(n=0)) %>%
+                  filter((payment_type == "Credit card" | payment_type == "Cash"))
+                  #filter((ratecodeid == "JFK" | ratecodeid == "Standard rate"))
+                  
+                  
+
+median_amount.bor.ttype_rcid.map <- inner_join(median_amount.bor.ttype_rcid, borough.map, by = "borough")
+median_amount.bor.ttype_rcid.map <- as.data.frame(median_amount.bor.ttype_rcid.map)
+
+# Get counts of each category for realistics comparision of averages
+cents.n <- cents[c("x", "y")]
+cents.n$borough <- cents$bnames$borough
+cents.n <- inner_join(cents.n, median_amount.bor.ttype_rcid[, c("payment_type", "trip_type", "borough", "fare", "n")], by = "borough")
+
+ggplot(data = subset(median_amount.bor.ttype_rcid.map, n != 0), aes(x = long, y = lat, group=group)) +
+  geom_polygon(aes(fill = sqrt(n)), color = "black") +
+  coord_fixed(xlim = seq(-74.25, -73.7, 0.01), ylim = seq(40.48, 40.93, 0.01), ratio = 1) +
+  scale_fill_gradientn(name = "Number of taxi \ntrips in borough", colours = brewer.pal(5, "GnBu"), na.value="white", breaks = c(10, 54.772, 100, 158.114, 223.607, 316.228), labels = c("100", "3000", "10,000", "25000", "50,000", "100,000")) +
+  geom_point(data = subset(cents.n, n != 0 & borough == "Outside Boroughs"),  aes(x = -74.1, y = 40.85, fill = sqrt(n), group = NULL), shape = 21, size = 25, stroke = 0, color = NA) +
+  geom_text(data = subset(cents.n, n != 0 & borough == "Outside Boroughs"), aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = y, label = borough, group = NULL), size=3.5, colour="black") +
+ geom_text(data = cents.n, aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = ifelse(borough == "Outside Boroughs", y+0.03, y+0.025), label = ifelse(is.na(fare), NA, paste0("$", fare)), group = payment_type), size=4, colour="black") +
+  facet_grid(trip_type~payment_type, drop = TRUE) +
+  theme(panel.background = element_rect(fill = "darkgrey")) +
+  ggtitle("Average fares for green and yellow taxis (standard rate, JFK and long distance rates)")
+  
+ 
+ 
+print("AVERAGE FARE AMOUNT BY TRIP TYPE AND PAYMENT TYPE")
+by(taxidata$fare_amount, taxidata$trip_type, median)
+writeLines("\n---------------------------------------------\n")
+
+
+
+```
+
+This confirms that rates for longer trips such as Newark and Nassau/Westchester have on effect on green taxis that have been dispatched. While the sample sizes are small, of the order of 10s, this sector can almost triple their earnings from credit card customers for trips originating in Queens to $27.50, double their earnings to $33 for trips starting in Brooklyn and now oinclude Manhattan customers with earnings of $20 on average.
+There is also some improvement seen in earnings from cash customers.
+
+Contrast this with yellow taxis where average fares remain the same same when these distance rates are included in the trip profile. This confirms the bulk of yellow taxi earnings come from Standard rate trips originating in Queens, followed by JFK trips also originating in Queens. 
+
+Street hail green taxi trips to Outside Boroughs also increased average credit card fares when the longer distance rates of are taken into consideration, from $26.25 to $32. Again the sample sizes are small showing that the market being serviced is small.
+
+
+
+
+It should also be noted that starting in january 2015, prices for yellow taxi trips dropped considerably due to competition from Uber etc.
+<https://en.wikipedia.org/wiki/Taxicabs_of_New_York_City>
+<http://www.nyc.gov/html/tlc/html/passenger/shl_passenger.shtml>
+<http://www.nyc.gov/html/tlc/downloads/pdf/2016_tlc_factbook.pdf>
+
+Given the smaller amount of green taxis in New York compared to yellow taxis, how can we compare these yellow taxis with the green taxis using the current sample - including categories with very small sample sizes, and still draw a credible conclusion about what is the best taxi to drive (average fare earned), when and where? This can be acheived doing a cluster analysis to segment all taxi activity.
+
+
+## What, When and Where is Best for a Taxi (Driver) - best is defined as highest fare earnings?
+In this analysis I created a new variable called weekday. Given an earlier univariate analysis where we found that the highest traffic occurred on Friday, Saturday and Sunday, I decided to create a three day weekend.
+Data is in the taxidata sample is  very imbalanced in favour of yellow taxis at 87%. Thwe cluster model model was build by undersampling the yellow taxi data, and limiting trips starting in Manhattan taxis to 50% of the sample.
+
+### Create clusters on taxi data
+
+```{r Create clusters on taxi data}
+
+# Create a new category for 4 day weekday vs. 3 day weekend
+taxidata$weekday <- ifelse(taxidata$pckwday %in% c("Mon", "Tues", "Wed", "Thurs"), "Yes", "No")
+taxidata$weekday <- factor(taxidata$weekday, levels = c(1, 0))
+
+# Check balance of dataset
+prop.table(table(taxidata$type, useNA = "ifany"))
+
+# Use the following columns for clustering
+# time_of_day, weekday, borough, destborough, payment_type, ratecodeid, trip_distance, trip_type
+# For bigger samples months or seasons will be taken into consideration
+
+sampcols <- c("borough", "destborough", "payment_type", "ratecodeid", "trip_distance", "trip_type", "time_of_day", "weekday", "type", "fare_amount")
+taxi.cluster <- taxidata[, sampcols]
+
+# Under sample the yellow taxi data
+taxi.yel <- subset(taxidata[, sampcols], taxidata$type == "yellow")
+set.seed(201605)
+sample.yel <- taxi.yel[sample(1:nrow(taxi.yel), table(taxidata$type)[c("green")], replace=FALSE, prob = ifelse(taxi.yel$borough == "Manhattan" & taxi.yel$destborough == "Manhattan", 3, 1)),]
+
+# sample.yel <- taxi.yel[sample(1:nrow(taxi.yel), table(taxidata$type)[c("green")], replace=FALSE),]
+
+#sample.yel <- sample.yel[, c("fare_amount", "tip_amount", "tolls_amount", "trip_distance", "trip_duration")]
+
+samp.data <- rbind (sample.yel, subset(taxidata[, sampcols], taxidata$type == "green"))
+
+
+# Remove payment_type and ratecodeid that are not important
+samp.data <- subset(samp.data, !(ratecodeid == "Unknown" | ratecodeid == "Negotiated fare" | ratecodeid == "Group ride"))
+
+samp.data <- subset(samp.data, payment_type == "Credit card" | payment_type == "Cash")
+
+# Compute distance matrix using a dissimilarity matrix (Gower coefficient)
+# distance.matrix <- daisy(samp.data, metric = "gower", stand = TRUE)
+
+# Create data frame of sample size = 3000. Change to ff data fame and drop fare_amount columns.
+# The full 50,000 plus rows cannot be used due to memory size and R
+set.seed(201605)
+samp.data2 <- samp.data[sample(1:nrow(samp.data), 5000, replace=TRUE, prob = ifelse((samp.data$trip_type == "Dispatch" & (samp.data$borough == "Queens" | samp.data$borough == "Brooklyn")) | (samp.data$trip_type == "Street-hail" & samp.data$borough == "Outside Boroughs"), 1, 3)), ]
+# samp.data2 <- samp.data[sample(1:nrow(samp.data), 5000, replace=FALSE), ]
+samp.data.scale <- samp.data2
+# samp.data.scale$trip_distance <- with(samp.data2, (trip_distance - mean(trip_distance))/sd(trip_distance))
+#samp.data.scale$trip_distance <- log(samp.data.scale$trip_distance)
+samp.data.scale$trip_distance <- with(samp.data.scale, (trip_distance - mean(trip_distance))/sd(trip_distance))
+#samp.data.scale$fare_amount <- scale(samp.data2$fare_amount)
+
+samp.data.scale <- samp.data.scale[, -9:-10]
+
+dist.matrix <- gower.dist(samp.data.scale)
+
+# Convert matrix to distance matrix
+dmatrix <- as.dist(dist.matrix)
+
+#Create hierarchical cluster
+samp.cluster <- fastcluster::hclust(dmatrix, method = "ward.D2")
+#Plot Dedrogram
+plot(samp.cluster)
+
+# Decide on  number of clusters and assign data points to clusters using cutree
+# Possible values for number of clusters
+rect.hclust(samp.cluster, k = 24, border = "red")
+
+# Pink Line: k = 10
+# Blue Line: k = 6
+# Orange Line: k = 5
+
+# Choosing k = 6, assign observations to clusters
+cluster.groups <- cutree(samp.cluster, k = 24)
+
+# Find characteristics of each cluster using split function and e.g. table(time_of_day, clustergroup)
+taxitrip.segments <- split(samp.data.scale, cluster.groups)
+getsegment.dist <- lapply(taxitrip.segments, "[[", "trip_distance")
+dist.avg <- rapply(getsegment.dist, function(x) median(x))
+getsegment.cat <- rapply(taxitrip.segments, function(x) labels(which.max(table(x))))
+
+# names(getsegment.cat) <- c("time_of_day", "weekday", "borough", "destborough", "payment_type", "ratecodeid", "trip_distance", "trip_type")
+names(getsegment.cat) <- c("borough", "destborough", "payment_type", "ratecodeid", "trip_distance", "trip_type", "time_of_day", "weekday")
+
+# Describe clusters
+
+num_var <- length(samp.data.scale)
+df.cluster <- cbind(data.frame(getsegment.cat[1:num_var], getsegment.cat[num_var+1:num_var*2]))
+for(i in (2*num_var+1):length(getsegment.cat)) {
+ 
+  if(i%%num_var == 0) {
+    
+    df.cluster <- cbind(df.cluster, getsegment.cat[(i-ncol(samp.data.scale)+1):i])
+    
+  }
+  
+}
+
+df.cluster <- as.data.frame(df.cluster)
+df.cluster <- as.data.frame(t(df.cluster))
+df.cluster$trip_distance <- NULL
+rownames(dist.avg) <- NULL
+rownames(df.cluster) <-NULL
+
+df.cluster <- cbind(df.cluster, dist.avg)
+
+df.cluster$fare_amount <-  tapply(samp.data2$fare_amount, cluster.groups, median)
+df.cluster
+tapply(samp.data2$fare_amount, cluster.groups, median)
+
+# Calculate average fare_amount associated with each cluster
+
+
+
+```
+
+
+
+
+```{r echo=FALSE, Multivariate_Plots}
+
+```
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. Were there features that strengthened each other in terms of looking at your feature(s) of interest?
+
+Converting the pickup and dropoff longitude and latitude variables to New York City borough information changed the analysis of the dataset completely. Some of the insights gained are repeated or reinforced from the individual sections above: 
+
+1. 84% of the trips start in Manhattan.
+
+2. Despite the above, on average the highest fares are made when the pickup location is in Queens at $23 and the lowest in Manhattan at $9.50.
+
+3. Payment type: Queens customers pay using credit cards pay the highest fare overall at $30.50. This is twice that paid by those with pickup points outside of the boroughs and is 2.5 times that paid on average by Brooklyn customers at $12.50. Queens also has the highset paying cash customers at $13
+
+4. Rate code id: The standard rate average fare of $8.50 and $10 for cash and credit card payments does not differ very much from the overall taxi trip average of $10.
+However The same cannot be said for Queens where the cash customers pay $1 more on average and credit card customers pay more thah 2.5 times the average at $26.50. Who are these standard rate Queens customers that are in the 10,000s compared to Manhattan customers in the 100,000s, yet they are paying far more money for taxi trips. 
+
+5. Time of day: Trips from Queens make the most money during any period of the day. This is especially true for credit card customers in the Early Morning and from the Afternoon Rush Hour to Late Night ending at 1am where the average fare varies from $21-$30.50 and is up to 3 times that of those originating in Manhattan. Morning Rush Hour customers pay $3 more on average than Manhattan customers at $13.
+Cash paying customers in Queens on the other hand pay about $2.50-$5.50 dollars for all time periods except Early Morning and Morning Rush Hour where the earnings are comparable  with Manhattan customers and the overall time period averages.
+
+6. On average trips originating in Queens make more money than those starting in Manhattan for standard rates trips. The only exception are trips beginning and ending in Queens.
+In fact 91% (167,229/184,408) of trips starting in Manhattan remain in Manhattan or in other words short trips. This is versus 48% (8802/18244) of trips the trips starting in Queens and remaining in Queens.
+
+In addition, for longer distances, trips starting in Queens and going to other boroughs make from $14 up to $23 (for Outside Boroughs) more than those from Manhattan and heading to other boroughs. 
+
+The data shows that standard rate trips from Queens throughout the day will make more money per trip when going to destinations outside of the Queens borough.
+
+Finally given the volume of yellow taxis in this dataset around 87%. It can be concluded that most of these lower paying Manhattan-to-Manhattan trips on average $9 are being done by yellow taxis.
+
+7. Trip type (street-hail(green), dispatch (green), No info (yellow only street-hail:
+
+Standard rates only - The high fares for standard rate trips are being made by yellow taxis. They make the highest fares on average from trips originating in Queens at $31.50 compared to $11 for green taxis (street hail) and $9.5 (dispatched) for credit card customers.
+
+Likewise for cash paying customers, yellow taxis make $26 on average fares versus $8.50 for green taxis (street hail) and $8 (dispatched).
+Yellow taxi may be based in Manhattan, but  the trips originating in Queens represent 3 times the average earnings of $10 for all taxis. Compare this to green taxis who are based in Queens but are earning a third of what yellow taxis earn in this borough for standard rate traffic only.
+
+There might be opportunities for green taxis to make money from dispatched trips originating in Brooklyn with customers paying on average $15.50 and $17.50 dollars for cash and credit card trips respectively. This is twice that paid by Queens customers.
+
+Standard rates and JFK - The yellow taxi earnings from Queens only increased by a mere $4 (credit card) and $6 (cash) when JFK traffic was taken into consideration. The traffic for other boroughs had little to no increase. This shows the dominance of standard rate trips in the yellow taxi sector. In theory the flat rate trips fom JFK at $52 should significantly have improved the average fares.
+
+Standard rates, JFK and longer distance rates - on including the fares for trips to Newark and Nassau/Westchester, green taxis experience a high jump in existing earnings.
+Rates for longer trips such as Newark and Nassau/Westchester have on effect on green taxis that have been dispatched. While the sample sizes are small, this sector can almost triple their earnings from credit card customers for trips originating in Queens to $27.50, double their earnings to $33 for trips starting in Brooklyn and now oinclude Manhattan customers with earnings of $20 on average.
+There is also some improvement seen in earnings from cash customers.
+
+Contrast this with yellow taxis where average fares remain the same same when these distance rates are included in the trip profile. 
+
+Street hail green taxi trips to Outside Boroughs also increased average credit card fares when the longer distance rates of are taken into consideration, from $26.25 to $32. Again the sample sizes are small showing that the market being serviced is small.
+
+
+Overall there is no difference between the average fares earned by yellow taxis and green taxis based on street hails at $10 per trip. Green taxis have a slight advantage when it come to disptach trips at $12. However when originating borough is added to the mix a much clearer picture emerges about where th highest fares are earned and by whom. In this case yellow taxis starting in Queens and going on standard rate trips for credit card and cash paying customers.
+
+Based on the current sample, if the green taxi drivers wanted to improve their revenue, they need to do one of three things.
+
+1.  Focus on increasing the market size of long distance credit card customers that use, the dispatch services. This can be done in all boroughs, but with particular attention paid Queens and Brooklyn.
+
+2. Get more information about the standard rate customers that are serviced by yellow taxis in Queens. Some of this data is location related and is already available to drill down to the neighborhood level. In which neighborhoods are these pickup trips happening? It might also involved some primary market research by the green taxi sector.
+
+3. While JFK trips have only increased yellow taxi revenue by $5-6 this is also a third option for green taxis. However it would invov elobbyong to get the current regulations change and might not be worth the smaller potential increase in fares compared to that for the more lucrative segments of long distance rates and Standard rate trips originating in Queens.
+
+
+### Were there any interesting or surprising interactions between features?
+The effect of credit card paying, standard rate, yellow taxi customers originatiiong in Queens on the  average fare_amount. This very surprising considering yellow taxis dominate the JFK market and have the backing TLC regulations to support it. this would lead one to assume that a larger effect on average fares is expected by this customer segment and not the mere increase of $5-6 above the standard rate fare averages.
+
+### OPTIONAL: Did you create any models with your dataset? Discuss the strengths and limitations of your model.
+
+Given the fact that we are looking at tthe best customer segments for taxi earnings a cluster model was created. The cluster included the following fields - based on the exploratory analysi conducted.
+time_of_day, weekday, borough, destborough, payment_type, ratecodeid, trip_distance, trip_type, and fare_amount.
+
+Hierarchical clustering was done on a sample of the data due to the limitations of memory on my machine.
+
+Strengths
+1. The original data is unbalanced with only 14% of observations being green taxis. To balance the data set I chose to undersample the yellow taxi data
+2, Visually examining the dendrogram resulting from the hierarchical cluster allowed a good choice of k - the number of clusters. k was also chosen based on the knowledge gained from the exploratory data analysis.
+3. Using gower distance for the dissimilarity matrix allowed the use of mix tytpe variables (numerical and categorical).
+4. Clustering itself extends the exploratoty data analysis by finding finding patterns in multivariate data. Graphs are limited by the amount of dimensions that are human "readable", but can prove useful in determining which features to focus on in a model.
+
+
+Limitations
+1. Manhattan trips by yellow taxis dominate the data set. A sampling method is needed tht will weight the data such that these trips do not dominate the sample.
+2. In marketing and customer segmentation hierchical clustering is used as a first step before predictive (regression) models or built. Regression could have been the next step in this process to predict likely fares.
+3. Due to the model being clustering only, I chose not to split it into a training and testing set. Having a test set is best to validate the model performance.
+4. Lack of physical memory limited the clustering to 5,000 observations. Ideally the entire 200,000 dataset would have been ideal.
+5. Again due to lack of memory undersampling was done. However the dominance of yellow taxi Manhahattan data indicates that oversampling of green taxi data to increase it from  a mere almost 27,000 rows could have been a better choice.
+
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, Plot_One}
+
+taxidata.med <- taxidata[, c("trip_distance","fare_amount", "type", "ratecodeid", "payment_type")]
+taxidata.med$trip_distance <- 5 * round(taxidata$trip_distance/5)
+
+ggplot(aes(x = 5 * round(trip_distance/5), y = fare_amount, color = type), data = subset(taxidata.med,ratecodeid != "Unknown")) +
+    geom_line(aes(group = type), stat = "summary", fun.y = median, size = 1) +
+  coord_cartesian(xlim = c(0,100)) +
+  ggtitle(label = "Median fare amount vs. distance") +
+  xlab("trip distance") +
+  facet_wrap(~ratecodeid, scales ="free") +
+  scale_color_manual(values = c("green" = "#5BC70C", "yellow" = "#DED20E"), breaks = c("green", "yellow"))
+
+```
+
+### Description One
+
+A look at how there are some opportunities where green taxis earn more than yellow taxis. This is inspite of yellow taxis dominating tjhe market and int this particular sample dataset having 87% of the market.
+They earn slightly more for Nassau/Westchester rates bewteen 6-13 miles, a little more for Newark trips from 13-25 miles, and Standard rate trips 25-35 miles.
+### Plot Two
+```{r echo=FALSE, Plot_Two}
+
+median_amount.bor.triptype <- taxidata %>%
+                  filter(ratecodeid == "Standard rate") %>%
+                  group_by(borough, payment_type, trip_type) %>%
+                  summarise(fare = round(median(fare_amount), 2),
+                            n = n()) %>%
+                  ungroup() %>%
+                  ungroup() %>%
+                  complete(borough, payment_type, trip_type, fill = list(n=0)) %>%
+                  filter(payment_type == "Credit card" | payment_type == "Cash")
+
+# Change the name ofdestborough column back to borough
+borough.map <- rename(borough.map, c(destborough = "borough"))
+
+              
+median_amount.bor.ttype.map <- inner_join(median_amount.bor.triptype, borough.map, by = "borough")
+median_amount.bor.ttype.map <- as.data.frame(median_amount.bor.ttype.map)
+
+# Get counts of each category for realistics comparision of averages
+cents.n <- cents[c("x", "y")]
+cents.n$borough <- cents$bnames$borough
+cents.n <- inner_join(cents.n, median_amount.bor.triptype[, c("payment_type", "trip_type", "borough", "fare", "n")], by = "borough")
+
+ggplot(data = subset(median_amount.bor.ttype.map, n != 0), aes(x = long, y = lat, group=group)) +
+  geom_polygon(aes(fill = sqrt(n)), color = "black") +
+  coord_fixed(xlim = seq(-74.25, -73.7, 0.01), ylim = seq(40.48, 40.93, 0.01), ratio = 1) +
+  scale_fill_gradientn(name = "Number of taxi \ntrips in borough", colours = brewer.pal(5, "GnBu"), na.value="white", breaks = c(10, 54.772, 100, 158.114, 223.607, 316.228), labels = c("100", "3000", "10,000", "25000", "50,000", "100,000")) +
+  geom_point(data = subset(cents.n, n != 0 & borough == "Outside Boroughs"),  aes(x = -74.1, y = 40.85, fill = sqrt(n), group = NULL), shape = 21, size = 25, stroke = 0, color = NA) +
+  geom_text(data = subset(cents.n, n != 0), aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = y, label = borough, group = NULL), size=3.5, colour="black") +
+ geom_text(data = cents.n, aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = ifelse(borough == "Outside Boroughs", y+0.03, y+0.025), label = ifelse(is.na(fare), NA, paste0("$", fare)), group = payment_type), size=4, colour="black") + 
+  facet_grid(trip_type~payment_type, drop = TRUE) +
+  theme(panel.background = element_rect(fill = "darkgrey")) +
+  ggtitle("Average fares for green and yellow taxis (standard rate only)")
+```
+
+### Description Two
+However breakingdown the data further by borough and payment type gave further insight into wehre the highest fares were being earned and by whom. In this case yellow taxi (street-hail) customers, paying by credit car ($30.50) or cash ($26), for trips beginnimg in Queens (non-airport trips).
+Street-hail green taxi trips to Outside Boroughs also make money at standard rates aaboe ($26). This confirms what is seen in Plot One.
+
+### Plot Three
+```{r echo=FALSE, Plot_Three}
+
+median_amount.bor.ttype_rcid <- taxidata %>%
+                  filter((ratecodeid != "Group ride" | ratecodeid != "Unknown")) %>%
+                  group_by(borough, payment_type, trip_type) %>%
+                  summarise(fare = median (fare_amount),
+                            n = n()) %>%
+                  ungroup() %>%
+                  ungroup() %>%
+                  complete(borough, payment_type, trip_type, fill = list(n=0)) %>%
+                  filter((payment_type == "Credit card" | payment_type == "Cash"))
+                  #filter((ratecodeid == "JFK" | ratecodeid == "Standard rate"))
+                  
+                  
+
+median_amount.bor.ttype_rcid.map <- inner_join(median_amount.bor.ttype_rcid, borough.map, by = "borough")
+median_amount.bor.ttype_rcid.map <- as.data.frame(median_amount.bor.ttype_rcid.map)
+
+# Get counts of each category for realistics comparision of averages
+cents.n <- cents[c("x", "y")]
+cents.n$borough <- cents$bnames$borough
+cents.n <- inner_join(cents.n, median_amount.bor.ttype_rcid[, c("payment_type", "trip_type", "borough", "fare", "n")], by = "borough")
+
+ggplot(data = subset(median_amount.bor.ttype_rcid.map, n != 0), aes(x = long, y = lat, group=group)) +
+  geom_polygon(aes(fill = sqrt(n)), color = "black") +
+  coord_fixed(xlim = seq(-74.25, -73.7, 0.01), ylim = seq(40.48, 40.93, 0.01), ratio = 1) +
+  scale_fill_gradientn(name = "Number of taxi \ntrips in borough", colours = brewer.pal(5, "GnBu"), na.value="white", breaks = c(10, 54.772, 100, 158.114, 223.607, 316.228), labels = c("100", "3000", "10,000", "25000", "50,000", "100,000")) +
+  geom_point(data = subset(cents.n, n != 0 & borough == "Outside Boroughs"),  aes(x = -74.1, y = 40.85, fill = sqrt(n), group = NULL), shape = 21, size = 25, stroke = 0, color = NA) +
+  geom_text(data = subset(cents.n, n != 0 & borough == "Outside Boroughs"), aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = y, label = borough, group = NULL), size=3.5, colour="black") +
+ geom_text(data = cents.n, aes(x = ifelse(borough == "Outside Boroughs", x+0.1, x), y = ifelse(borough == "Outside Boroughs", y+0.03, y+0.025), label = ifelse(is.na(fare), NA, paste0("$", fare)), group = payment_type), size=4, colour="black") +
+  facet_grid(trip_type~payment_type, drop = TRUE) +
+  theme(panel.background = element_rect(fill = "darkgrey")) +
+  ggtitle("Average fares for green and yellow taxis (standard rate, JFK and long distance rates)")
+
+```
+
+### Description Three
+
+This reflects the effect of JFK and long distance rates (Newark, Nassau/Westchester) on average fares. We know where yellow taxis make their highest earningd from standard rate trips. However the effect of JFK trips is much smaller only increasing the average fares by $5-$6.
+The graph also confirms what is seen in Plot One. There are opportunities for green taxis to make money. In this case the graph gives more details. Dispatched trips starting in Queens and Brooklyn make $27.50 and $33 respectively.
+
+------
+
+# Reflection
+
+This proved to be a very ionteresting dataset.
+Errors in the dataset can be discover early if you know exactly what features are of interest and you get descriptive statistics associated with these features. However this is not always possible as you might not know what features will prove the most useful ahead of time and some datasets have hundreds, if not thousands of features.
+A good rule of thumb appears to be to check the range the variables in the data should have by exploiting any existing domain knowledge. However in cases where this is not possible, then error ranges will be discovered as part of the EDA process itself when questions are asked and answered. Sometimes, what can appear as errors initially might turn out to be useful data that forms a critical part of the analysis.
+
+In this case a cluster size of 24 was chosen as a tradeoff between the dendrogram and problem knowledge. This shows that two potential groups of high fares for green taxis are:- 
+1. Cluster 21 - Queens to Manhattan, Cash, Standard rate, Nighttime Rush Hour (8-10pm) on a weekday. earning median fares on average of $22
+2. Cluster 22 - Queens to Manhattan, Cash, Standard rate, Nighttime Rush Hour (8-10pm) on a weekday. earning median fares on average of $44.75
+
+These two groups also bypass the JFK and Manhattan restrictions in place for the green taxi sector.
+
+
+As a standard you might not want to remove the lower and upper quantiles for a dataset immediately. In these observations this mainly seen with negative fares being classified as mainly Dispute or No charge. They can be perfectly valid reasons for this data.
+The data actually showed an interesting, unexpected pattern of high average fare trips that are not in fact JFK-based. These are standard rate trips from Queens and are high for both cash and credit card customers serviced by the green taxi sector. 
+On the other hand, while sample sizes are small (order < 100s), green taxis still have an opportunity to make money in a different customer segment of standard rate credit card paying trips to areas outside of the 5 boroughs. In addition they can earn higher fares from dispatched customers starting Queens or Brooklyn.
+Alternatively they can also target the segment(s) in which yellow taxis make the most money (above).
+In regards to JFK trips, it might not make sense for yellow taxis to target this segment as the increase in average fares is only $5-$6 for  the yellow taxi sector. They would also have the additional challenge of overcoming existing JFK street-hail regulation prohibiting them from targeting these customers.
+
+This dataset is the perfect candidate for additional analysis doing the following:-
+
+1. Using a larger dataset of sample to confirm this initial analysis. Some sub-sample sizes were rather small and it is advantages to increase the overall starting sample size from 200,000 rows to reinforce or confirm the analysis done in this project. The original dataset is over 200 million rows. This is also perfect for adding additional variables based on weather conditions seen throughout a calendar year and noting the effect it has on trips and fares.
+
+2. Location data is in the form of latitude and longitude. This is the perfect opportunity to drill down from the borough to the neighborhood level to gain even further insight about the origin of these customers and the type of locations or areas the where the trip begins.
+
+3. Additional market research using primary sources (taxi drivers and customers) is also an option for further analysis. More information about customers can be added to the analysis/model.
+
+4. Building a better cluster model by weighting and/or oversampling any smaller sub-sample sizes. By default the green taxis will always have a smaller dataset because that sector is smaller and newer. Any cluster model should this into consideration by either oversampling the green data or reducing the dominance of yellow taxis especially for trips starting in Manhattan – via weights and/or undersampling.
+
+This entire process also reflects the iterative process involved in data science. Initially you get a picture of what is happening, but then it also creates more questions. To answer these questions might require more data and techniques outside of EDA (model building). This is where the statistics course (from Udacity) will come in handy, creating surveys or designing experiments to help answer the additional question will also prove valuable. The results of the surveys and any hypothesis testing can be combine to form the next stage EDA to gain further insight.
+In retrospect this is how it works in the real world, the value of having access to business or domain knowledge, hypothesis testing (A/B etc.)) and/or sufficient data will drive insights into any analytics project.
+
