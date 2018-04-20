@@ -2,7 +2,9 @@
 Exploratory data analysis in R using New York City taxi data (open data).
 The final writeup is in
  
- P4_NYC_Taxi.html - https://lhdatalab.github.io/P4_NYC_Taxi.html
+ P4_NYC_Taxi.html - https://lhdatalab.github.io/P4_NYC_Taxi.html 
+
+R code is in P4_NYC Taxi.Rmd
 
 R Markdown file containing the analysis of the taxi data. This is part of the exploratory process, but not part of the final analysis. This file shows the data munging to get the data into a clean and consistent format for analysis.
 
