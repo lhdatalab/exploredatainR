@@ -27,4 +27,4 @@ In this case it was geospatial querying. I wanted to send a dataframe of all geo
 I think nodbi offers the greatest chance of getting MongoDB to do geospatial batch processing from R (without Hadoop/MapReduce), but it requires changes to the source code. Lucky for me it was written in C. When time permits, I will modify the code so it can handle geospatial queries (batch).
 I have only now started experimenting with Hadoop. I have started to use Hive or HiveQL. However I want to expand into other areas.
 
-Update: I hav enow wroked with Hadoop, Hive and Impala (and some Spark/PySpark) for the pass 11 months.
+Update: I have now worked with Hadoop, Hive and Impala (and some Spark/PySpark) for the past 11 months.
