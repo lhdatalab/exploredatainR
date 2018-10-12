@@ -7,14 +7,14 @@ The final writeup is in
  
 ## Recommendations:
 
-Yellow taxis dominate the sector in New York City. However, there are three possible clusters wit higher earnings where green taxis could compete with yellow taxis and possibly earn higher revenue per trip (on average $10).
+Yellow taxis dominate the sector in New York City. However, there are three possible clusters with higher earnings where green taxis could compete with yellow taxis and possibly earn higher revenue per trip (average revenue is $10).
 
 1. Cluster 2 - Queens to Manhattan, Credit card, Standard rate, Street-hail, weekday trips earning median fares of $38.50.
 2. Cluster 15 - Queens to Queens, Cash, Standard rate, Street-hail, weekend trips earning median fares $25.75
 3. Cluster 14 - Manhattan to Brooklyn, Credit card, Standard rate, Street-hail, weekend trips with median fares $19.
 
 
-Two of the three groups also bypass the JFK and Manhattan restrictions in place for the green taxi sector. To ascertain if 3. is outside of the Upper Manhattan pickup restrictions, we will have to drill down to the community level using the longitude and latitude coordinates provided.
+Two of the three groups (1 & 2) also bypass the JFK and Manhattan restrictions in place for the green taxi sector. To ascertain if 3. is outside of the Upper Manhattan pickup restrictions, we will have to drill down to the community level using the longitude and latitude coordinates provided.
 
 The data actually showed an interesting, unexpected pattern of high average fare trips that are not in fact JFK-based. These are standard rate trips from Queens and are high for both cash and credit card customers serviced by the yellow taxi sector. 
 The green sector can target the segment(s) in which yellow taxis make the most money.
